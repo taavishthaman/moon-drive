@@ -1,0 +1,45 @@
+{
+	admin off
+	persist_config off
+	auto_https off
+
+	log {
+		format json
+	}
+
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:{$PORT:80} {
+	log {
+		format json
+	}
+
+	respond /health 200
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Same as Railpack's default, plus what Moon Drive needs:
+		# 'wasm-unsafe-eval' for the 3D model decoder, blob: for the model textures
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https:; font-src 'self' data: https:; connect-src 'self' blob: data: https:; media-src 'self' blob: https:; worker-src 'self' blob:; object-src 'none'; frame-src 'self' https:;"
+		-Server
+	}
+
+	root * {{.StaticFileRoot}}
+
+	file_server {
+		hide .git
+		hide .env*
+		hide Caddyfile
+	}
+
+	encode {
+		gzip
+		zstd
+	}
+
+	try_files {path} {path}.html {path}/index.html
+}
