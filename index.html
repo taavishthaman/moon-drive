@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moon Drive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --panel: rgba(12,14,18,.78); --line: rgba(255,255,255,.12); --text: #e8eaee; --muted: #8d939e; --accent: #ffcf6e; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--text); font-family: Barlow, system-ui, sans-serif; overflow: hidden; user-select: none; }
+  canvas#gl { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(10px); }
+  .hidden { display: none !important; }
+  h1, h2 { font-family: "Barlow Condensed", sans-serif; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin: 0; }
+  button { font: inherit; color: var(--text); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px; cursor: pointer; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  kbd { font-family: "Barlow Condensed", sans-serif; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; color: var(--text); }
+
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #000; z-index: 20; transition: opacity .6s; }
+  #loading .box { width: min(360px, 80vw); text-align: center; }
+  #loading h1 { font-size: 30px; margin-bottom: 4px; }
+  #loading p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .bar { height: 3px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0%; background: var(--accent); transition: width .2s; }
+  #loadText { color: var(--muted); font-size: 12px; margin-top: 10px; min-height: 1em; }
+
+  /* globe UI */
+  #globeUI { top: 16px; left: 16px; width: 290px; padding: 16px; }
+  #globeUI h1 { font-size: 22px; }
+  #globeUI .sub { color: var(--muted); font-size: 13px; margin: 2px 0 14px; line-height: 1.4; }
+  .sites { display: grid; gap: 6px; }
+  .sites button { text-align: left; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .sites button span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .sites .hd { font-size: 10px; color: var(--accent); letter-spacing: .1em; text-transform: uppercase; margin-top: 8px; }
+  #hover { position: fixed; pointer-events: none; font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); transform: translate(14px, 14px); white-space: nowrap; }
+  #globeHint { bottom: 16px; left: 50%; transform: translateX(-50%); padding: 8px 14px; font-size: 13px; color: var(--muted); }
+
+  /* surface HUD */
+  #hudTL { top: 16px; left: 16px; padding: 12px 14px; min-width: 230px; }
+  #hudTL h2 { font-size: 17px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12.5px; margin-top: 8px; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .kv span:nth-child(even) { font-family: "Barlow Condensed", sans-serif; font-size: 14px; text-align: right; }
+  #hudBottom { bottom: 16px; left: 50%; transform: translateX(-50%); padding: 8px 18px; display: flex; gap: 22px; align-items: baseline; }
+  .big { font-family: "Barlow Condensed", sans-serif; font-size: 30px; line-height: 1; }
+  .unit { color: var(--muted); font-size: 12px; margin-left: 3px; }
+  #hudTR { top: 16px; right: 16px; padding: 12px 14px; width: 250px; font-size: 12.5px; }
+  #hudTR .row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; gap: 8px; }
+  #hudTR .row span:first-child { color: var(--muted); }
+  #hudTR .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  #hudTR .btns button { flex: 1; padding: 6px 8px; font-size: 12.5px; }
+  #hudTR label { display: block; color: var(--muted); margin-top: 8px; }
+  #hudTR input[type=range] { width: 100%; accent-color: var(--accent); }
+  #toast { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-family: "Barlow Condensed", sans-serif; font-size: 22px; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 2px 12px #000; pointer-events: none; opacity: 0; transition: opacity .4s; text-align: center; }
+  #fade { position: fixed; inset: 0; background: #000; pointer-events: none; opacity: 0; transition: opacity .5s; z-index: 10; display: grid; place-items: center; }
+  #fade div { font-family: "Barlow Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  #credit { position: fixed; bottom: 6px; right: 10px; font-size: 10.5px; color: rgba(255,255,255,.35); }
+  #credit a { color: inherit; }
+  #touch { position: fixed; bottom: 70px; left: 0; right: 0; display: none; justify-content: space-between; padding: 0 18px; pointer-events: none; }
+  #touch .pad { display: grid; grid-template-columns: repeat(3, 54px); gap: 6px; pointer-events: auto; }
+  #touch button { height: 54px; padding: 0; font-size: 18px; background: rgba(20,22,28,.7); }
+  @media (pointer: coarse) { #touch.on { display: flex; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="loading"><div class="box">
+  <h1>Moon Drive</h1>
+  <p>NASA LRO elevation &amp; colour data · NASA Perseverance model</p>
+  <div class="bar"><div id="loadBar"></div></div>
+  <div id="loadText">Starting…</div>
+</div></div>
+
+<div id="globeUI" class="panel hidden">
+  <h1>Pick a landing site</h1>
+  <div class="sub">Drag to spin the Moon, scroll to zoom. Click anywhere on the surface to land there, or choose a site with extra-detailed terrain.</div>
+  <div class="sites" id="sites"></div>
+</div>
+<div id="hover" class="hidden"></div>
+<div id="globeHint" class="panel hidden">Relief exaggerated 6× in orbit view · real scale on the surface</div>
+
+<div id="hudTL" class="panel hidden">
+  <h2 id="siteName">—</h2>
+  <div class="kv">
+    <span>Position</span><span id="hPos">—</span>
+    <span>Elevation</span><span id="hElev">—</span>
+    <span>Terrain data</span><span id="hSrc">—</span>
+    <span class="poiRow">Target</span><span class="poiRow" id="hPoi">—</span>
+    <span>Gravity</span><span>1.62 m/s² · ⅙ g</span>
+  </div>
+</div>
+<div id="hudBottom" class="panel hidden">
+  <div><span class="big" id="hSpeed">0</span><span class="unit">km/h</span></div>
+  <div><span class="big" id="hHead">N</span><span class="unit" id="hHeadDeg">0°</span></div>
+  <div><span class="big" id="hAir">—</span><span class="unit">air</span></div>
+</div>
+<div id="hudTR" class="panel hidden">
+  <div class="row"><span>Drive / walk</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></div>
+  <div class="row"><span>Boost</span><kbd>Shift</kbd></div>
+  <div class="row"><span>Brake · jump</span><kbd>Space</kbd></div>
+  <div class="row"><span>Exit / board rover</span><kbd>E</kbd></div>
+  <div class="row"><span>Camera · look around</span><span><kbd>C</kbd> drag · scroll</span></div>
+  <div class="row"><span>Headlights · graphics</span><span><kbd>L</kbd> <kbd>G</kbd></span></div>
+  <div class="row"><span>Reset · orbit</span><span><kbd>R</kbd> <kbd>M</kbd></span></div>
+  <div class="row"><span>Performance</span><span id="hFps">—</span></div>
+  <label>Sun elevation <span id="vSunEl"></span><input type="range" id="sunEl" min="1" max="80" value="14"></label>
+  <label>Sun direction <span id="vSunAz"></span><input type="range" id="sunAz" min="0" max="359" value="110"></label>
+  <div class="btns">
+    <button id="bExit">Exit rover</button>
+    <button id="bCam">Camera</button>
+    <button id="bOrbit">Orbit</button>
+    <button id="bLights">Lights off</button>
+    <button id="bGfx">Graphics: High</button>
+  </div>
+</div>
+<div id="touch" class="on">
+  <div class="pad">
+    <span></span><button data-k="KeyW">▲</button><span></span>
+    <button data-k="KeyA">◀</button><button data-k="KeyS">▼</button><button data-k="KeyD">▶</button>
+  </div>
+  <div class="pad" style="grid-template-columns: repeat(2, 64px)">
+    <button data-k="Space">⤒</button><button data-k="ShiftLeft">»</button>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="fade"><div id="fadeText"></div></div>
+<div id="credit">Terrain: NASA/GSFC/ASU LRO LOLA &amp; LROC (CGI Moon Kit) · Models: NASA 3D Resources</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { CSM } from 'three/addons/csm/CSM.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = id => document.getElementById(id);
+const R = 1737400, G = 1.62, D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+const SITES = [
+  { id: 'a11', name: 'Apollo 11 · Tranquility Base', lat: 0.67408, lon: 23.47297 },
+  { id: 'a15', name: 'Apollo 15 · Hadley Rille', lat: 26.13224, lon: 3.63400, spawn: [-2150, 150], yaw: -Math.PI / 2 },
+  { id: 'a17', name: 'Apollo 17 · Taurus-Littrow', lat: 20.19080, lon: 30.77168 },
+  { id: 'tycho', name: 'Tycho crater', lat: -43.40, lon: -11.30 },
+  { id: 'copernicus', name: 'Copernicus crater', lat: 9.70, lon: -20.10 },
+  { id: 'spole', name: 'South Pole · Shackleton rim', lat: -89.97, lon: 0.0 },
+  { id: 'ina', name: 'Ina · possibly young volcanism', lat: 18.65, lon: 5.30, spawn: [0, 1500], yaw: Math.PI, colour: true, quiet: [18.66, 5.30, 3500], poi: [0, -303, 'Ina'] },
+  { id: 'reiner', name: 'Reiner Gamma · magnetic swirl', lat: 7.4, lon: -59.0, colour: true, spawn: [-6480, -6960], yaw: Math.PI, poi: [4560, 10320, 'Brightest swirl'] },
+];
+// zones where the made-up craters are switched off, so they don't masquerade as the real feature
+const QUIET = SITES.filter(s => s.quiet).map(s => { const f = makeFrame(s.quiet[0], s.quiet[1]); return { x: f.C[0] * R, y: f.C[1] * R, z: f.C[2] * R, r: s.quiet[2] }; });
+
+// ============================================================ renderer
+const canvas = $('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+// ============================================================ loading helpers
+const progress = { done: 0, total: 0 };
+function track(p, label) {
+  progress.total++;
+  return p.then(v => { progress.done++; $('loadBar').style.width = (100 * progress.done / progress.total) + '%'; $('loadText').textContent = label + ' ✓'; return v; });
+}
+async function loadBitmap(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(url + ' → ' + res.status);
+  const bmp = await createImageBitmap(await res.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
+  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0);
+  return { cv, w: bmp.width, h: bmp.height, px: cx.getImageData(0, 0, bmp.width, bmp.height).data };
+}
+async function loadHeight(url) {
+  const { w, h, px } = await loadBitmap(url);
+  const data = new Float32Array(w * h);
+  for (let i = 0, j = 0; i < data.length; i++, j += 4) data[i] = (((px[j] << 8) | px[j + 1]) - 20000) * 0.5; // metres
+  return { w, h, data };
+}
+const gltfLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+// models ship as base64 inside small JS modules (the host doesn't serve .glb files)
+const loadGLB = async name => {
+  const b64 = (await import(`./model_${name}.js`)).default;
+  const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return new Promise((res, rej) => gltfLoader.parse(bin.buffer, '', g => res(g.scene), rej));
+};
+
+// ============================================================ height data
+let G4 = null;            // 4 px/deg global
+let COL = null;           // colour map pixels
+const T16 = new Array(8).fill(null);   // 16 px/deg tiles: 4 x 2, each 90°x90° (1440 px)
+const T16loading = new Set();
+const PATCHES = [];       // high-res gnomonic patches around landing sites
+const CPATCHES = [];      // sharper colour patches (from the 8K LROC mosaic)
+let terrainVersion = 0;
+
+function g4px(ix, iy) {
+  ix = ((ix % 1440) + 1440) % 1440; iy = iy < 0 ? 0 : iy > 719 ? 719 : iy;
+  return G4.data[iy * 1440 + ix];
+}
+function g4bilinear(lat, lon) {
+  const fx = (lon + 180) * 4 - 0.5, fy = (90 - lat) * 4 - 0.5;
+  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+  const a = g4px(ix, iy), b = g4px(ix + 1, iy), c = g4px(ix, iy + 1), d = g4px(ix + 1, iy + 1);
+  return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+}
+function get16(ix, iy) {
+  ix = ((ix % 5760) + 5760) % 5760; iy = iy < 0 ? 0 : iy > 2879 ? 2879 : iy;
+  const t = T16[((iy / 1440) | 0) * 4 + ((ix / 1440) | 0)];
+  if (t) return t[(iy % 1440) * 1440 + (ix % 1440)];
+  return g4bilinear(90 - (iy + 0.5) / 16, (ix + 0.5) / 16 - 180);
+}
+function cr(p0, p1, p2, p3, t) { return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0))); }
+function sample16(lat, lon) {
+  const fx = (lon + 180) * 16 - 0.5, fy = (90 - lat) * 16 - 0.5;
+  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+  const r0 = cr(get16(ix - 1, iy - 1), get16(ix, iy - 1), get16(ix + 1, iy - 1), get16(ix + 2, iy - 1), tx);
+  const r1 = cr(get16(ix - 1, iy), get16(ix, iy), get16(ix + 1, iy), get16(ix + 2, iy), tx);
+  const r2 = cr(get16(ix - 1, iy + 1), get16(ix, iy + 1), get16(ix + 1, iy + 1), get16(ix + 2, iy + 1), tx);
+  const r3 = cr(get16(ix - 1, iy + 2), get16(ix, iy + 2), get16(ix + 1, iy + 2), get16(ix + 2, iy + 2), tx);
+  return cr(r0, r1, r2, r3, ty);
+}
+function bicubicArr(d, n, fx, fy) {
+  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+  const g = (x, y) => d[(y < 0 ? 0 : y >= n ? n - 1 : y) * n + (x < 0 ? 0 : x >= n ? n - 1 : x)];
+  const r = [];
+  for (let k = -1; k <= 2; k++) r.push(cr(g(ix - 1, iy + k), g(ix, iy + k), g(ix + 1, iy + k), g(ix + 2, iy + k), tx));
+  return cr(r[0], r[1], r[2], r[3], ty);
+}
+function tileIndex(lat, lon) {
+  const tx = Math.min(3, Math.max(0, Math.floor((lon + 180) / 90)));
+  const ty = lat >= 0 ? 0 : 1;
+  return ty * 4 + tx;
+}
+function ensureTile(i) {
+  if (T16[i] || T16loading.has(i)) return Promise.resolve();
+  T16loading.add(i);
+  const ty = (i / 4) | 0, tx = i % 4;
+  return loadHeight(`h16_${ty}_${tx}.png`).then(h => { T16[i] = h.data; T16loading.delete(i); terrainVersion++; })
+    .catch(e => { console.error(e); T16loading.delete(i); });
+}
+function tilesAround(lat, lon) {
+  const set = new Set();
+  const dl = Math.min(180, 2 / Math.max(0.02, Math.cos(lat * D2R)));
+  for (const a of [-2, 0, 2]) for (const b of [-dl, 0, dl]) {
+    let la = Math.max(-89.99, Math.min(89.99, lat + a)), lo = lon + b;
+    lo = ((lo + 540) % 360) - 180;
+    set.add(tileIndex(la, lo));
+  }
+  return [...set];
+}
+
+// ---- frames: local tangent plane (x east, y up, z south)
+function makeFrame(lat, lon) {
+  const la = lat * D2R, lo = lon * D2R;
+  const C = [Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo)];
+  const E = [-Math.sin(lo), 0, -Math.cos(lo)];
+  const N = [C[1] * E[2] - C[2] * E[1], C[2] * E[0] - C[0] * E[2], C[0] * E[1] - C[1] * E[0]];
+  return { lat, lon, C, E, N };
+}
+let FR = makeFrame(0, 0);
+let UX = 0, UY = 0, UZ = 0;     // scratch output of localToUnit
+function localToUnit(x, z, f = FR) {
+  const qx = f.C[0] * R + f.E[0] * x - f.N[0] * z;
+  const qy = f.C[1] * R + f.E[1] * x - f.N[1] * z;
+  const qz = f.C[2] * R + f.E[2] * x - f.N[2] * z;
+  const inv = 1 / Math.sqrt(qx * qx + qy * qy + qz * qz);
+  UX = qx * inv; UY = qy * inv; UZ = qz * inv;
+}
+function unitToLocal(px, py, pz, f = FR) {
+  const d = px * f.C[0] + py * f.C[1] + pz * f.C[2];
+  return [(px * f.E[0] + py * f.E[1] + pz * f.E[2]) / d * R, -(px * f.N[0] + py * f.N[1] + pz * f.N[2]) / d * R];
+}
+const unitLat = (py) => Math.asin(Math.max(-1, Math.min(1, py))) * R2D;
+const unitLon = (px, pz) => Math.atan2(-pz, px) * R2D;
+
+// ---- procedural detail (deterministic in moon-fixed coordinates)
+function hash3(x, y, z, s) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(z | 0, 1274126177) ^ Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y, z, s) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  let fx = x - ix, fy = y - iy, fz = z - iz;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+  const a = hash3(ix, iy, iz, s), b = hash3(ix + 1, iy, iz, s), c = hash3(ix, iy + 1, iz, s), d = hash3(ix + 1, iy + 1, iz, s);
+  const e = hash3(ix, iy, iz + 1, s), f = hash3(ix + 1, iy, iz + 1, s), g = hash3(ix, iy + 1, iz + 1, s), h = hash3(ix + 1, iy + 1, iz + 1, s);
+  const x1 = a + (b - a) * fx, x2 = c + (d - c) * fx, x3 = e + (f - e) * fx, x4 = g + (h - g) * fx;
+  const y1 = x1 + (x2 - x1) * fy, y2 = x3 + (x4 - x3) * fy;
+  return (y1 + (y2 - y1) * fz) * 2 - 1;
+}
+const CRATER_LEVELS = [
+  { cell: 1100, rmax: 300, prob: 0.55, seed: 11 },
+  { cell: 300, rmax: 85, prob: 0.65, seed: 23 },
+  { cell: 80, rmax: 22, prob: 0.7, seed: 37 },
+  { cell: 22, rmax: 5.5, prob: 0.75, seed: 51 },
+];
+let BRIGHT = 0;  // albedo boost from fresh craters, side output
+function craterField(X, Y, Z, step = 0) {
+  let h = 0; BRIGHT = 0;
+  let quiet = 1;
+  for (const q of QUIET) {
+    const dx = X - q.x, dy = Y - q.y, dz = Z - q.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d < q.r) { const t = Math.max(0, (d - q.r * 0.55) / (q.r * 0.45)); quiet = Math.min(quiet, t * t * (3 - 2 * t)); }
+  }
+  if (quiet === 0) return 0;
+  for (let L = 0; L < CRATER_LEVELS.length; L++) {
+    const { cell, rmax, prob, seed } = CRATER_LEVELS[L];
+    if (rmax < step * 1.2) continue;      // too small to show at this mesh resolution
+    const cx = Math.floor(X / cell), cy = Math.floor(Y / cell), cz = Math.floor(Z / cell);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const ix = cx + dx, iy = cy + dy, iz = cz + dz;
+      if (hash3(ix, iy, iz, seed) > prob) continue;
+      let ox = (ix + hash3(ix, iy, iz, seed + 1)) * cell, oy = (iy + hash3(ix, iy, iz, seed + 2)) * cell, oz = (iz + hash3(ix, iy, iz, seed + 3)) * cell;
+      const s = R / Math.sqrt(ox * ox + oy * oy + oz * oz); ox *= s; oy *= s; oz *= s;   // centre on the surface
+      if (Math.floor(ox / cell) !== ix || Math.floor(oy / cell) !== iy || Math.floor(oz / cell) !== iz) continue;   // must stay in its own cell
+      const rr = hash3(ix, iy, iz, seed + 4);
+      const r = rmax * (0.25 + 0.75 * rr * rr);
+      const ddx = X - ox, ddy = Y - oy, ddz = Z - oz, d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+      const lim = 1.8 * r;
+      if (d2 > lim * lim) continue;
+      const t = Math.sqrt(d2) / r;
+      const age = hash3(ix, iy, iz, seed + 5);           // 0 fresh ... 1 eroded
+      const depth = r * (0.22 - 0.14 * age), rim = r * (0.05 - 0.035 * age);
+      if (t < 1) h += -depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t;
+      else { const k = (t - 1) / 0.8; h += rim * (1 - k) * (1 - k); }
+      if (age < 0.12) BRIGHT += 0.35 * Math.max(0, 1 - t / 1.8);
+    }
+  }
+  BRIGHT *= quiet;
+  return h * quiet;
+}
+function detailAt(px, py, pz, step = 0) {
+  const X = px * R, Y = py * R, Z = pz * R;
+  let n = vnoise(X / 1500, Y / 1500, Z / 1500, 3) * 40 + vnoise(X / 420, Y / 420, Z / 420, 5) * 10;
+  if (step < 73) n += vnoise(X / 110, Y / 110, Z / 110, 7) * 2.4;
+  if (step < 19) n += vnoise(X / 28, Y / 28, Z / 28, 9) * 0.55;
+  if (step < 4.7) n += vnoise(X / 7, Y / 7, Z / 7, 13) * 0.12;
+  return n + craterField(X, Y, Z, step);
+}
+
+let SRC = '';  // side output: which data set dominated
+function baseAt(px, py, pz) {
+  let hp = 0, w = 0;
+  for (const p of PATCHES) {
+    const d = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
+    if (d < 0.99) continue;
+    const u = (px * p.F.E[0] + py * p.F.E[1] + pz * p.F.E[2]) / d * R;
+    const v = (px * p.F.N[0] + py * p.F.N[1] + pz * p.F.N[2]) / d * R;
+    const fx = u / p.sp + (p.n - 1) / 2, fy = -v / p.sp + (p.n - 1) / 2;
+    const edge = Math.min(fx - 1, fy - 1, p.n - 2 - fx, p.n - 2 - fy);
+    if (edge <= 0) continue;
+    const ww = edge >= 40 ? 1 : (edge / 40) * (edge / 40) * (3 - 2 * edge / 40);
+    if (ww > w) { w = ww; hp = bicubicArr(p.data, p.n, fx, fy); }
+  }
+  if (w >= 1) { SRC = 'LOLA 64 px/° patch (~240 m)'; return hp; }
+  const lat = unitLat(py), lon = unitLon(px, pz);
+  const t = T16[tileIndex(lat, lon)];
+  const hb = sample16(lat, lon);
+  SRC = w > 0.5 ? 'LOLA 64 px/° patch (~240 m)' : t ? 'LOLA 16 px/° (~1.9 km)' : 'LOLA 4 px/° (loading finer…)';
+  return hb + (hp - hb) * w;
+}
+function surfaceAt(px, py, pz, step = 0) { return baseAt(px, py, pz) + detailAt(px, py, pz, step); }
+function heightLocal(x, z) { localToUnit(x, z); return surfaceAt(UX, UY, UZ); }
+
+// colour
+const LIN = new Float32Array(256);
+for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function colourAt(px, py, pz, out) {
+  const lat = unitLat(py), lon = unitLon(px, pz);
+  const W = COL.w, H = COL.h, d = COL.px;
+  const fx = (lon + 180) / 360 * W - 0.5, fy = (90 - lat) / 180 * H - 0.5;
+  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+  for (let c = 0; c < 3; c++) {
+    const g = (x, y) => LIN[d[(((y < 0 ? 0 : y >= H ? H - 1 : y) * W) + ((x % W) + W) % W) * 4 + c]];
+    const v = (g(ix, iy) * (1 - tx) + g(ix + 1, iy) * tx) * (1 - ty) + (g(ix, iy + 1) * (1 - tx) + g(ix + 1, iy + 1) * tx) * ty;
+    out[c] = v;
+  }
+  for (const p of CPATCHES) {
+    const dd = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
+    if (dd < 0.99) continue;
+    const u = (px * p.F.E[0] + py * p.F.E[1] + pz * p.F.E[2]) / dd * R, v = (px * p.F.N[0] + py * p.F.N[1] + pz * p.F.N[2]) / dd * R;
+    const gx = u / p.sp + (p.n - 1) / 2, gy = -v / p.sp + (p.n - 1) / 2;
+    const edge = Math.min(gx, gy, p.n - 2 - gx, p.n - 2 - gy);
+    if (edge <= 0) continue;
+    const w = edge >= 30 ? 1 : edge / 30;
+    const ix = Math.floor(gx), iy = Math.floor(gy), tx = gx - ix, ty = gy - iy, n = p.n, d = p.px;
+    for (let c = 0; c < 3; c++) {
+      const g = (x, y) => LIN[d[(y * n + x) * 4 + c]];
+      const pc = (g(ix, iy) * (1 - tx) + g(ix + 1, iy) * tx) * (1 - ty) + (g(ix, iy + 1) * (1 - tx) + g(ix + 1, iy + 1) * tx) * ty;
+      out[c] += (pc - out[c]) * w;
+    }
+  }
+}
+
+// ============================================================ physics height (matches the finest mesh triangulation)
+const ROOT = 131072, MIN_NODE = 32, SEG = 32, GRID = MIN_NODE / SEG;   // 1 m near the rover
+const PH = new Map();
+function phNode(i, j) {
+  const key = i * 262144 + j;
+  let v = PH.get(key);
+  if (v === undefined) { v = heightLocal(-ROOT / 2 + i * GRID, -ROOT / 2 + j * GRID); if (PH.size > 60000) PH.clear(); PH.set(key, v); }
+  return v;
+}
+function hPhys(x, z) {
+  const fx = (x + ROOT / 2) / GRID, fz = (z + ROOT / 2) / GRID;
+  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
+  const a = phNode(i, j), b = phNode(i, j + 1), c = phNode(i + 1, j), d = phNode(i + 1, j + 1);
+  if (tx + tz <= 1) return a + (c - a) * tx + (b - a) * tz;
+  return d + (b - d) * (1 - tx) + (c - d) * (1 - tz);
+}
+
+// ============================================================ scenes
+const globeScene = new THREE.Scene();
+const surfScene = new THREE.Scene();
+surfScene.background = new THREE.Color(0x000000);
+let mode = 'loading';
+
+const gCam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.01, 100);
+gCam.position.set(0.6, 0.9, 3.3);
+const controls = new OrbitControls(gCam, canvas);
+controls.enableDamping = true; controls.minDistance = 1.25; controls.maxDistance = 7; controls.rotateSpeed = 0.45; controls.enablePan = false; controls.enabled = false;
+
+const sCam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 600000);
+
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  for (const c of [gCam, sCam]) { c.aspect = innerWidth / innerHeight; c.updateProjectionMatrix(); }
+  composer.setSize(innerWidth, innerHeight); csm.updateFrustums();
+});
+
+// ---- globe
+let globe, globeMarker;
+const EXAG = 6;
+function buildGlobe(colTex) {
+  const W = 720, H = 360;
+  const pos = new Float32Array((W + 1) * (H + 1) * 3), uv = new Float32Array((W + 1) * (H + 1) * 2);
+  for (let j = 0, k = 0; j <= H; j++) {
+    const lat = 90 - j * 180 / H, la = lat * D2R;
+    for (let i = 0; i <= W; i++, k++) {
+      const lon = -180 + i * 360 / W, lo = lon * D2R;
+      const r = 1 + g4bilinear(Math.max(-89.9, Math.min(89.9, lat)), lon) / R * EXAG;
+      pos[k * 3] = r * Math.cos(la) * Math.cos(lo); pos[k * 3 + 1] = r * Math.sin(la); pos[k * 3 + 2] = -r * Math.cos(la) * Math.sin(lo);
+      uv[k * 2] = i / W; uv[k * 2 + 1] = 1 - j / H;
+    }
+  }
+  const idx = new Uint32Array(W * H * 6);
+  for (let j = 0, k = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const nw = j * (W + 1) + i, ne = nw + 1, sw = nw + W + 1, se = sw + 1;
+    idx[k++] = sw; idx[k++] = se; idx[k++] = nw; idx[k++] = se; idx[k++] = ne; idx[k++] = nw;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeVertexNormals();
+  globe = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: colTex, roughness: 1, metalness: 0 }));
+  globeScene.add(globe);
+  const sun = new THREE.DirectionalLight(0xffffff, 3.2); sun.position.set(-3, 1.2, 2.5); globeScene.add(sun);
+  globeScene.add(new THREE.AmbientLight(0xffffff, 0.12));
+  globeScene.add(makeStars(4000, 50, 1.2));
+  globeMarker = new THREE.Mesh(new THREE.RingGeometry(0.012, 0.018, 40), new THREE.MeshBasicMaterial({ color: 0xffcf6e, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthTest: false }));
+  globeMarker.visible = false; globeScene.add(globeMarker);
+  for (const s of SITES) {
+    const la = s.lat * D2R, lo = s.lon * D2R;
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.008, 20), new THREE.MeshBasicMaterial({ color: 0xffcf6e, side: THREE.DoubleSide }));
+    const p = new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo)).multiplyScalar(1.004);
+    dot.position.copy(p); dot.lookAt(p.clone().multiplyScalar(2)); globeScene.add(dot);
+  }
+}
+function makeStars(n, radius, size) {
+  const p = new Float32Array(n * 3), c = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    p[i * 3] = s * Math.cos(a) * radius; p[i * 3 + 1] = u * radius; p[i * 3 + 2] = s * Math.sin(a) * radius;
+    const b = 0.25 + Math.pow(Math.random(), 4) * 0.9, t = Math.random();
+    c[i * 3] = b * (0.85 + 0.15 * t); c[i * 3 + 1] = b * 0.92; c[i * 3 + 2] = b * (1.05 - 0.15 * t);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthWrite: false, fog: false }));
+}
+
+// globe interaction
+const ray = new THREE.Raycaster(), mouseNDC = new THREE.Vector2();
+const unitSphere = new THREE.Sphere(new THREE.Vector3(), 1.0);
+let downAt = null;
+function pickGlobe(e) {
+  mouseNDC.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
+  ray.setFromCamera(mouseNDC, gCam);
+  const hit = ray.ray.intersectSphere(unitSphere, new THREE.Vector3());
+  if (!hit) return null;
+  hit.normalize();
+  return { lat: unitLat(hit.y), lon: unitLon(hit.x, hit.z), p: hit };
+}
+canvas.addEventListener('pointermove', e => {
+  if (mode !== 'globe') return;
+  const h = pickGlobe(e), el = $('hover');
+  if (!h) { el.classList.add('hidden'); globeMarker.visible = false; return; }
+  el.classList.remove('hidden'); el.style.left = e.clientX + 'px'; el.style.top = e.clientY + 'px';
+  el.textContent = `${fmtLat(h.lat)}  ${fmtLon(h.lon)} · click to land`;
+  globeMarker.visible = true; globeMarker.position.copy(h.p).multiplyScalar(1.006); globeMarker.lookAt(h.p.clone().multiplyScalar(3));
+});
+canvas.addEventListener('pointerdown', e => { if (mode === 'globe') downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (mode !== 'globe' || !downAt) return;
+  const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]); downAt = null;
+  if (moved > 5) return;
+  const h = pickGlobe(e); if (!h) return;
+  land({ name: 'Free landing', lat: h.lat, lon: h.lon });
+});
+const fmtLat = v => `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'N' : 'S'}`;
+const fmtLon = v => `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'E' : 'W'}`;
+
+// ============================================================ surface scene
+const Q = { high: true };   // graphics quality
+const texLoader = new THREE.TextureLoader();
+function loadTex(url, srgb) {
+  const t = texLoader.load(url); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t;
+}
+const detailN = loadTex('detail_n.png'), detailA = loadTex('detail_a.png');
+
+// Cascaded shadow maps: crisp shadows near the rover, crater-rim shadows kilometres away
+const sunDir = new THREE.Vector3();
+const csm = new CSM({
+  maxFar: 2500, cascades: 3, mode: 'practical', parent: surfScene, shadowMapSize: 2048,
+  lightDirection: new THREE.Vector3(-1, -1, -1).normalize(), camera: sCam,
+  lightIntensity: 3.6, lightNear: 1, lightFar: 12000, lightMargin: 1500, shadowBias: -0.00015,
+});
+csm.fade = true;
+csm.lights.forEach((l, i) => { l.color.set(0xfff4e6); l.shadow.normalBias = [0.04, 0.3, 1.2][i]; l.shadow.bias = [-0.0002, -0.0006, -0.0012][i]; });
+const fill = new THREE.HemisphereLight(0x8fa6cc, 0x000000, 0.05);   // faint earthshine
+surfScene.add(fill);
+
+// environment for reflections: black sky above, sunlit regolith below
+(function makeEnv() {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying vec3 vP; void main(){ float y = normalize(vP).y; vec3 c = y < 0.0 ? vec3(0.32, 0.30, 0.28) * smoothstep(0.0, -0.3, y) : vec3(0.0); gl_FragColor = vec4(c, 1.0); }',
+  })));
+  surfScene.environment = new THREE.PMREMGenerator(renderer).fromScene(s, 0).texture;
+  surfScene.environmentIntensity = 0.6;
+})();
+
+// ---- sky: stars with a Milky Way band, glowing sun, real Earth
+const sky = new THREE.Group(); surfScene.add(sky);
+const galN = new THREE.Vector3(0.35, 0.55, -0.76).normalize();
+(function makeSky() {
+  const n = 16000, p = new Float32Array(n * 3), c = new Float32Array(n * 3), sz = new Float32Array(n);
+  const u = new THREE.Vector3(), a = new THREE.Vector3().crossVectors(galN, new THREE.Vector3(0, 1, 0)).normalize(), b = new THREE.Vector3().crossVectors(galN, a);
+  const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 0.8;
+  for (let i = 0; i < n; i++) {
+    if (i < n * 0.55) { const t = Math.random() * Math.PI * 2; u.copy(a).multiplyScalar(Math.cos(t)).addScaledVector(b, Math.sin(t)).addScaledVector(galN, gauss() * 0.18).normalize(); }
+    else { const z = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, s = Math.sqrt(1 - z * z); u.set(s * Math.cos(t), z, s * Math.sin(t)); }
+    p.set([u.x * 300000, u.y * 300000, u.z * 300000], i * 3);
+    const m = Math.pow(Math.random(), 7);
+    const temp = Math.random();
+    const br = 0.25 + m * 3.5;
+    c.set([br * (0.8 + 0.3 * temp), br * 0.9, br * (1.15 - 0.3 * temp)], i * 3);
+    sz[i] = 1.0 + m * 3.2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('size', new THREE.BufferAttribute(sz, 1));
+  const pr = Math.min(devicePixelRatio, 1.75);
+  sky.add(new THREE.Points(g, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `attribute float size; attribute vec3 color; varying vec3 vC; void main(){ vC = color; gl_PointSize = size * ${pr.toFixed(2)}; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: 'varying vec3 vC; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vC * a, a); }',
+  })));
+  // diffuse galactic glow
+  sky.add(new THREE.Mesh(new THREE.SphereGeometry(310000, 64, 32), new THREE.ShaderMaterial({
+    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { gN: { value: galN } },
+    vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 gN; varying vec3 vD;
+      float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+      float vn(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(mix(h(i), h(i+vec3(1,0,0)), f.x), mix(h(i+vec3(0,1,0)), h(i+vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h(i+vec3(0,0,1)), h(i+vec3(1,0,1)), f.x), mix(h(i+vec3(0,1,1)), h(i+vec3(1,1,1)), f.x), f.y), f.z); }
+      void main(){ float b = dot(vD, gN); float band = exp(-b*b*28.0);
+        float n = vn(vD*6.0)*0.5 + vn(vD*14.0)*0.3 + vn(vD*32.0)*0.2;
+        float dust = smoothstep(0.35, 0.7, vn(vD*9.0 + 3.0)) * exp(-b*b*300.0);
+        vec3 c = vec3(0.55, 0.6, 0.75) * band * (0.35 + n) * (1.0 - dust*0.8) * 0.035;
+        gl_FragColor = vec4(c, 1.0); }`,
+  })));
+})();
+const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+sunDisc.material.color.setRGB(6, 5.7, 5.2);
+sunDisc.scale.setScalar(30000); sky.add(sunDisc);
+const earthMat = new THREE.ShaderMaterial({
+  uniforms: { map: { value: loadTex('earth.jpg', true) }, sunW: { value: new THREE.Vector3(1, 0, 0) } },
+  vertexShader: 'varying vec3 vN; varying vec2 vUv; varying vec3 vV; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - w.xyz); gl_Position = projectionMatrix * viewMatrix * w; }',
+  fragmentShader: `uniform sampler2D map; uniform vec3 sunW; varying vec3 vN; varying vec2 vUv; varying vec3 vV;
+    void main(){ vec3 n = normalize(vN); float d = dot(n, sunW);
+      vec3 day = texture2D(map, vUv).rgb;
+      vec3 c = day * smoothstep(-0.08, 0.3, d) * 2.2;
+      float rim = pow(1.0 - max(dot(n, vV), 0.0), 2.5);
+      c += vec3(0.25, 0.5, 1.0) * rim * smoothstep(-0.25, 0.35, d) * 1.4;
+      gl_FragColor = vec4(c, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+});
+const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), earthMat);
+earth.scale.setScalar(4100); sky.add(earth);
+
+function glowTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+  const g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.08, 'rgba(255,255,255,1)'); g.addColorStop(0.11, 'rgba(255,240,210,.35)'); g.addColorStop(0.3, 'rgba(255,230,200,.05)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+// ---- terrain material: LROC colour + multi-scale triplanar regolith detail + curvature of the Moon
+const curvUniforms = { uCamXZ: { value: new THREE.Vector2() }, uInv2R: { value: 1 / (2 * R) }, tDetN: { value: detailN }, tDetA: { value: detailA } };
+const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+csm.setupMaterial(terrainMat);
+const csmHook = terrainMat.onBeforeCompile;
+terrainMat.onBeforeCompile = (sh, r) => {
+  csmHook(sh, r);
+  Object.assign(sh.uniforms, curvUniforms);
+  sh.vertexShader = 'uniform vec2 uCamXZ; uniform float uInv2R; varying vec3 vWP; varying vec3 vWN;\n' + sh.vertexShader.replace('#include <project_vertex>', `
+    vec4 wpos = modelMatrix * vec4( transformed, 1.0 );
+    vWP = wpos.xyz; vWN = normalize( mat3( modelMatrix ) * objectNormal );
+    vec2 dxz = wpos.xz - uCamXZ;
+    wpos.y -= dot( dxz, dxz ) * uInv2R;
+    vec4 mvPosition = viewMatrix * wpos;
+    gl_Position = projectionMatrix * mvPosition;`);
+  sh.fragmentShader = `uniform sampler2D tDetN; uniform sampler2D tDetA; varying vec3 vWP; varying vec3 vWN;
+    vec3 triBlend(vec3 n){ vec3 b = pow(abs(n), vec3(6.0)); return b / (b.x + b.y + b.z); }
+    float triA(vec3 p, vec3 bw){
+      if (bw.y > 0.985) return texture2D(tDetA, p.xz).r;
+      return texture2D(tDetA, p.zy).r * bw.x + texture2D(tDetA, p.xz).r * bw.y + texture2D(tDetA, p.xy).r * bw.z; }
+    vec3 triN(vec3 p, vec3 bw, vec3 nW){
+      if (bw.y > 0.985) { vec3 t = texture2D(tDetN, p.xz).xyz * 2.0 - 1.0; t = vec3(t.xy + nW.xz, abs(t.z) * nW.y); return normalize(t.xzy); }
+      vec3 tx = texture2D(tDetN, p.zy).xyz * 2.0 - 1.0;
+      vec3 ty = texture2D(tDetN, p.xz).xyz * 2.0 - 1.0;
+      vec3 tz = texture2D(tDetN, p.xy).xyz * 2.0 - 1.0;
+      tx = vec3(tx.xy + nW.zy, abs(tx.z) * nW.x);
+      ty = vec3(ty.xy + nW.xz, abs(ty.z) * nW.y);
+      tz = vec3(tz.xy + nW.xy, abs(tz.z) * nW.z);
+      return normalize(tx.zyx * bw.x + ty.xzy * bw.y + tz.xyz * bw.z);
+    }
+  ` + sh.fragmentShader
+    .replace('#include <map_fragment>', `
+      vec3 nW0 = normalize(vWN);
+      vec3 bw = triBlend(nW0);
+      float camD = length(vWP - cameraPosition);
+      float wA = 1.0 - smoothstep(12.0, 40.0, camD);
+      float wB = 1.0 - smoothstep(150.0, 600.0, camD);
+      float wC = 1.0 - smoothstep(500.0, 1800.0, camD);
+      float alb = 1.0;
+      if (wA > 0.0) alb += (triA(vWP / 2.5, bw) - 0.5) * 0.9 * wA;
+      if (wB > 0.0) alb += (triA(vWP / 21.0, bw) - 0.5) * 1.1 * wB;
+      if (wC > 0.0) alb += (triA(vWP / 170.0, bw) - 0.5) * 0.9 * wC;
+      diffuseColor.rgb *= alb;`)
+    .replace('#include <normal_fragment_maps>', `
+      {
+        vec3 nD = nW0;
+        if (wA > 0.0) nD += (triN(vWP / 2.5, bw, nW0) - nW0) * wA * 1.2;
+        if (wB > 0.0) nD += (triN(vWP / 21.0, bw, nW0) - nW0) * wB;
+        if (wC > 0.0) nD += (triN(vWP / 170.0, bw, nW0) - nW0) * 0.7 * wC;
+        nD = normalize(nD);
+        normal = normalize( ( viewMatrix * vec4( nD, 0.0 ) ).xyz );
+      }`);
+};
+const terrain = new THREE.Group(); surfScene.add(terrain);
+
+// ---- quadtree chunks
+const built = new Map();      // key -> { mesh, ver, used }
+let displayed = new Set();
+function nodeKey(L, i, j) { return L + '_' + i + '_' + j; }
+let CHUNK_INDEX = null;
+const LODC = { x: 0, z: 0 };
+function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
+  const size = ROOT / (1 << L), step = size / SEG, x0 = -ROOT / 2 + i * size, z0 = -ROOT / 2 + j * size;
+  const cx = x0 + size / 2, cz = z0 + size / 2;
+  const n1 = SEG + 1, n3 = SEG + 3;
+  const H = new Float32Array(n3 * n3);
+  const nv = n1 * n1 + 4 * SEG;
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), uv = new Float32Array(nv * 2);
+  const rgb = [0, 0, 0];
+  for (let b = 0; b < n3; b++) for (let a = 0; a < n3; a++) {
+    const x = x0 + (a - 1) * step, z = z0 + (b - 1) * step;
+    localToUnit(x, z);
+    const inner = a >= 1 && a <= n1 && b >= 1 && b <= n1;
+    H[b * n3 + a] = surfaceAt(UX, UY, UZ, step);
+    if (inner) {
+      const k = (b - 1) * n1 + (a - 1);
+      colourAt(UX, UY, UZ, rgb);
+      const br = 1 + BRIGHT;
+      col[k * 3] = rgb[0] * 2.2 * br; col[k * 3 + 1] = rgb[1] * 2.2 * br; col[k * 3 + 2] = rgb[2] * 2.2 * br;
+    }
+  }
+  // stitch edges onto coarser neighbours: interpolate between their vertices so there are no cracks
+  const snap = (d, idxOf, posOf) => {
+    const f = 1 << d; if (f <= 1) return;
+    const stepC = step * f, hc = new Map();
+    const coarse = t => { let v = hc.get(t); if (v === undefined) { const [x, z] = posOf(t); localToUnit(x, z); v = surfaceAt(UX, UY, UZ, stepC); hc.set(t, v); } return v; };
+    for (let t = 0; t <= SEG; t++) { const r = t % f, t0 = t - r; H[idxOf(t)] = r ? coarse(t0) + (coarse(t0 + f) - coarse(t0)) * (r / f) : coarse(t0); }
+  };
+  snap(ed[0], t => 1 * n3 + (t + 1), t => [x0 + t * step, z0]);                  // north (z0)
+  snap(ed[2], t => (SEG + 1) * n3 + (t + 1), t => [x0 + t * step, z0 + size]);   // south
+  snap(ed[3], t => (t + 1) * n3 + 1, t => [x0, z0 + t * step]);                  // west (x0)
+  snap(ed[1], t => (t + 1) * n3 + (SEG + 1), t => [x0 + size, z0 + t * step]);   // east
+  for (let b = 0; b < n1; b++) for (let a = 0; a < n1; a++) {
+    const k = b * n1 + a, hb = (b + 1) * n3 + (a + 1);
+    pos[k * 3] = x0 + a * step - cx; pos[k * 3 + 1] = H[hb]; pos[k * 3 + 2] = z0 + b * step - cz;
+    let nx = (H[hb - 1] - H[hb + 1]) / (2 * step), nz = (H[hb - n3] - H[hb + n3]) / (2 * step);
+    const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
+    nor[k * 3] = nx * inv; nor[k * 3 + 1] = inv; nor[k * 3 + 2] = nz * inv;
+    uv[k * 2] = (x0 + a * step) / 5; uv[k * 2 + 1] = (z0 + b * step) / 5;
+  }
+  // skirt around the border hides cracks between LOD levels
+  const border = [];
+  for (let a = 0; a < SEG; a++) border.push(a);
+  for (let b = 0; b < SEG; b++) border.push(b * n1 + SEG);
+  for (let a = SEG; a > 0; a--) border.push(SEG * n1 + a);
+  for (let b = SEG; b > 0; b--) border.push(b * n1);
+  const drop = step * 1.0 + 1;
+  border.forEach((src, s) => {
+    const k = n1 * n1 + s;
+    for (let c = 0; c < 3; c++) { pos[k * 3 + c] = pos[src * 3 + c]; nor[k * 3 + c] = nor[src * 3 + c]; col[k * 3 + c] = col[src * 3 + c]; }
+    pos[k * 3 + 1] -= drop; uv[k * 2] = uv[src * 2]; uv[k * 2 + 1] = uv[src * 2 + 1];
+  });
+  if (!CHUNK_INDEX) {     // same topology for every chunk: build it once and share it
+    const idx = [];
+    for (let b = 0; b < SEG; b++) for (let a = 0; a < SEG; a++) {
+      const A = b * n1 + a, Cc = A + 1, B = A + n1, D = B + 1;
+      idx.push(A, B, Cc, B, D, Cc);
+    }
+    const P = border.length;
+    for (let s = 0; s < P; s++) {
+      const t0 = border[s], t1 = border[(s + 1) % P], s0 = n1 * n1 + s, s1 = n1 * n1 + (s + 1) % P;
+      idx.push(t0, s0, t1, t1, s0, s1);
+    }
+    CHUNK_INDEX = new THREE.BufferAttribute(new Uint16Array(idx), 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(CHUNK_INDEX);
+  g.computeBoundingSphere();
+  { const dd = Math.hypot(cx - LODC.x, cz - LODC.z) + size; g.boundingSphere.radius += dd * dd / (2 * R) * 1.5 + 2; }   // room for the curvature applied in the shader
+  const m = new THREE.Mesh(g, terrainMat);
+  m.position.set(cx, 0, cz);
+  m.receiveShadow = true; m.castShadow = size <= (Q.high ? 1024 : 256);
+  m.userData = { L, i, j };
+  return m;
+}
+function selectLeaves(px, pz) {
+  const out = [];
+  (function rec(L, i, j) {
+    const size = ROOT / (1 << L), x0 = -ROOT / 2 + i * size, z0 = -ROOT / 2 + j * size;
+    const dx = Math.max(x0 - px, 0, px - (x0 + size)), dz = Math.max(z0 - pz, 0, pz - (z0 + size));
+    const dist = Math.max(dx, dz);
+    if (size > MIN_NODE && dist < size * 1.0) { for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) rec(L + 1, i * 2 + a, j * 2 + b); }
+    else out.push([L, i, j]);
+  })(0, 0, 0);
+  return out;
+}
+const overlaps = (a, b) => {
+  const sa = ROOT / (1 << a.L), sb = ROOT / (1 << b.L);
+  const ax = a.i * sa, az = a.j * sa, bx = b.i * sb, bz = b.j * sb;
+  return ax < bx + sb && bx < ax + sa && az < bz + sb && bz < az + sa;
+};
+const lodState = { x: 1e9, z: 1e9, ver: -1, pending: true };
+function updateTerrain(px, pz, budgetMs, force = false) {
+  if (!force && !lodState.pending && lodState.ver === terrainVersion && Math.hypot(px - lodState.x, pz - lodState.z) < 3) return 0;
+  lodState.x = px; lodState.z = pz; lodState.ver = terrainVersion;
+  LODC.x = px; LODC.z = pz;
+  const leaves = selectLeaves(px, pz);
+  const leafSet = new Set(leaves.map(([L, i, j]) => nodeKey(L, i, j)));
+  const levelAt = (x, z) => {
+    for (let L = 0; L <= 14; L++) {
+      const size = ROOT / (1 << L), i = Math.floor((x + ROOT / 2) / size), j = Math.floor((z + ROOT / 2) / size);
+      if (i < 0 || j < 0 || i >= (1 << L) || j >= (1 << L)) return -1;
+      if (leafSet.has(nodeKey(L, i, j))) return L;
+    }
+    return -1;
+  };
+  for (const lf of leaves) {
+    const [L, i, j] = lf, size = ROOT / (1 << L), x0 = -ROOT / 2 + i * size, z0 = -ROOT / 2 + j * size;
+    const e = [[x0 + size / 2, z0 - 0.25], [x0 + size + 0.25, z0 + size / 2], [x0 + size / 2, z0 + size + 0.25], [x0 - 0.25, z0 + size / 2]]
+      .map(([x, z]) => { const n = levelAt(x, z); return n < 0 ? 0 : Math.min(5, Math.max(0, L - n)); });
+    lf.push(e, nodeKey(L, i, j) + '_' + e.join(''));
+  }
+  const t0 = performance.now();
+  const todo = [];
+  for (const lf of leaves) {
+    const b = built.get(lf[4]);
+    if (!b || b.ver !== terrainVersion) todo.push(lf);
+  }
+  todo.sort((a, b) => b[0] - a[0]);   // finest (closest) first
+  for (const [L, i, j, e, k] of todo) {
+    if (!force && performance.now() - t0 > budgetMs) break;
+    const old = built.get(k); if (old) { terrain.remove(old.mesh); old.mesh.geometry.dispose(); }
+    const mesh = buildChunk(L, i, j, e);
+    built.set(k, { mesh, ver: terrainVersion });
+  }
+  const next = new Set();
+  for (const [L, i, j, , k] of leaves) {
+    const b = built.get(k);
+    if (b && b.ver === terrainVersion) next.add(k);
+    else {
+      if (b) next.add(k);   // stale but still useful
+      else for (const d of displayed) { const m = built.get(d); if (m && overlaps(m.mesh.userData, { L, i, j })) next.add(d); }
+    }
+  }
+  for (const k of displayed) if (!next.has(k)) { const b = built.get(k); if (b) terrain.remove(b.mesh); }
+  for (const k of next) { const b = built.get(k); if (b && b.mesh.parent !== terrain) terrain.add(b.mesh); }
+  displayed = next;
+  if (built.size > 700) {   // evict far chunks
+    for (const [k, b] of built) if (!displayed.has(k) && b.mesh.userData.L > 5) { b.mesh.geometry.dispose(); built.delete(k); if (built.size < 500) break; }
+  }
+  lodState.pending = todo.some(lf => { const b = built.get(lf[4]); return !b || b.ver !== terrainVersion; });
+  return todo.length;
+}
+function clearTerrain() {
+  lodState.pending = true; lodState.x = 1e9;
+  for (const [, b] of built) { terrain.remove(b.mesh); b.mesh.geometry.dispose(); }
+  built.clear(); displayed = new Set(); PH.clear();
+}
+
+// ---- models
+let roverModel, lmModel, astroModel;
+const rover = { x: 0, y: 0, z: 0, yaw: Math.PI, speed: 0, vy: 0, air: false, airTime: 0, q: new THREE.Quaternion(), pitch: 0 };
+const astro = { x: 0, y: 0, z: 0, yaw: 0, vy: 0, air: false, active: false };
+let lmUnit = null;
+const roverObj = new THREE.Group(), lmObj = new THREE.Group(), astroObj = new THREE.Group();
+surfScene.add(roverObj, lmObj, astroObj);
+
+// merge every mesh that shares a material into one: far fewer draw calls for static models
+function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), groups = new Map();
+  root.traverse(o => {
+    if (!o.isMesh || Array.isArray(o.material)) return;
+    const key = o.material.uuid + '|' + Object.keys(o.geometry.attributes).sort().join(',') + '|' + !!o.geometry.index;
+    if (!groups.has(key)) groups.set(key, { mat: o.material, list: [] });
+    groups.get(key).list.push(o);
+  });
+  const out = new THREE.Group(), get = ['getX', 'getY', 'getZ', 'getW'];
+  for (const { mat, list } of groups.values()) {
+    const geos = list.map(o => {
+      const g = new THREE.BufferGeometry();
+      for (const [n, a] of Object.entries(o.geometry.attributes)) {
+        const arr = new Float32Array(a.count * a.itemSize);
+        for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) arr[i * a.itemSize + c] = a[get[c]](i);
+        g.setAttribute(n, new THREE.BufferAttribute(arr, a.itemSize));
+      }
+      if (o.geometry.index) g.setIndex(new THREE.BufferAttribute(Uint32Array.from(o.geometry.index.array), 1));
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+      return g;
+    });
+    const merged = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
+    if (merged) out.add(new THREE.Mesh(merged, mat)); else list.forEach(o => { const c = o.clone(); c.applyMatrix4(inv.clone().multiply(o.matrixWorld)); out.add(c); });
+  }
+  return out;
+}
+function prepModel(m) {
+  const seen = new Set();
+  m.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    for (const mat of [].concat(o.material)) if (!seen.has(mat)) { seen.add(mat); csm.setupMaterial(mat); }
+  });
+  return m;
+}
+
+// ---- headlights
+const headlights = { on: true, lights: [], lamps: [] };
+function lampGlow() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.15, 'rgba(255,245,225,.6)'); g.addColorStop(0.45, 'rgba(255,235,200,.08)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function addHeadlights() {
+  const glowTex = lampGlow();
+  for (const side of [-1, 1]) {
+    const sl = new THREE.SpotLight(0xfff0dc, 0, 0, 0.44, 0.65, 1.3);
+    sl.position.set(side * 0.55, 1.45, 1.5);
+    sl.target.position.set(side * 1.2, -0.4, 25);
+    if (side < 0) { sl.castShadow = true; sl.shadow.mapSize.set(512, 512); sl.shadow.camera.near = 0.3; sl.shadow.camera.far = 150; sl.shadow.bias = -0.0005; sl.shadow.normalBias = 0.03; }
+    roverObj.add(sl, sl.target);
+    const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.075, 20), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3.8, 3.5) }));
+    lamp.position.set(side * 0.55, 1.45, 1.52);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    glow.material.color.setRGB(0.9, 0.85, 0.78); glow.scale.setScalar(0.55); glow.position.copy(lamp.position).add(new THREE.Vector3(0, 0, 0.03));
+    roverObj.add(lamp, glow);
+    headlights.lights.push(sl); headlights.lamps.push(lamp, glow);
+  }
+  setHeadlights(true);
+}
+function setHeadlights(on) {
+  headlights.on = on;
+  headlights.lights.forEach(l => l.intensity = on ? 34 : 0);
+  headlights.lamps.forEach(l => l.visible = on);
+  headlights.lights.forEach(l => l.visible = on);   // an invisible light skips its shadow pass
+  $('bLights').textContent = on ? 'Lights off' : 'Lights on';
+}
+
+// ---- boulders: scattered by deterministic hashing, denser around fresh craters
+const ROCK_TILE = 48;
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x9a948c, roughness: 0.95, metalness: 0, map: detailA, normalMap: detailN, normalScale: new THREE.Vector2(1.5, 1.5) });
+csm.setupMaterial(rockMat);
+function rockGeometry(seed, detail = 3) {
+  const g = new THREE.IcosahedronGeometry(1, detail);
+  const p = g.attributes.position, v = new THREE.Vector3();
+  const sx = 0.8 + hash3(seed, 1, 2, 9) * 0.6, sy = 0.45 + hash3(seed, 3, 4, 9) * 0.35, sz = 0.8 + hash3(seed, 5, 6, 9) * 0.5;
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const n = 1 + vnoise(v.x * 1.6 + seed, v.y * 1.6, v.z * 1.6, seed) * 0.28 + vnoise(v.x * 4 + seed, v.y * 4, v.z * 4, seed + 1) * 0.08;
+    v.multiplyScalar(n); v.x *= sx; v.y *= sy; v.z *= sz;
+    // chipped facets
+    for (let k = 0; k < 4; k++) {
+      const nx = hash3(seed, k, 1, 3) - 0.5, ny = hash3(seed, k, 2, 3) - 0.3, nz = hash3(seed, k, 3, 3) - 0.5;
+      const L = Math.hypot(nx, ny, nz), d = (v.x * nx + v.y * ny + v.z * nz) / L, cut = 0.55 + hash3(seed, k, 4, 3) * 0.3;
+      if (d > cut) { const e = d - cut; v.x -= nx / L * e; v.y -= ny / L * e; v.z -= nz / L * e; }
+    }
+    if (v.y < -0.2) v.y = -0.2 + (v.y + 0.2) * 0.3;
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const rockGeos = [1, 2, 3, 4, 5, 6].map(rockGeometry);
+const ROCK_CAP = 2500;
+const rockGeosFar = [1, 2, 3, 4, 5, 6].map(sd => rockGeometry(sd, 1));
+const rockMeshes = rockGeos.map(g => { const m = new THREE.InstancedMesh(g, rockMat, ROCK_CAP); m.castShadow = m.receiveShadow = true; m.count = 0; surfScene.add(m); return m; });
+const rockMeshesFar = rockGeosFar.map(g => { const m = new THREE.InstancedMesh(g, rockMat, ROCK_CAP); m.castShadow = false; m.receiveShadow = true; m.count = 0; surfScene.add(m); return m; });
+const rockTiles = new Map();
+let rockKeys = '', rockRadius = 320, rockSeed = 0;
+function genRockTile(ti, tj) {
+  const out = [], x0 = ti * ROCK_TILE, z0 = tj * ROCK_TILE;
+  for (let k = 0; k < 70; k++) {
+    const h1 = hash3(ti, tj, k, 101 + rockSeed), h2 = hash3(ti, tj, k, 202 + rockSeed), h3 = hash3(ti, tj, k, 303 + rockSeed), h4 = hash3(ti, tj, k, 404 + rockSeed);
+    const x = x0 + h1 * ROCK_TILE, z = z0 + h2 * ROCK_TILE;
+    const y = heightLocal(x, z);
+    const dens = 0.11 + Math.min(1, BRIGHT * 2.2) * 0.6;
+    if (h3 > dens) continue;
+    const r = Math.min(2.6, 0.09 / Math.pow(h4 + 0.012, 0.62));
+    if (r < 0.12) continue;
+    out.push({ x, y: y - r * 0.18, z, r, ry: h1 * 40, rx: (h2 - 0.5) * 0.5, v: (((k + ti * 7 + tj * 13) % rockGeos.length) + rockGeos.length) % rockGeos.length });
+  }
+  return out;
+}
+const rockM = new THREE.Matrix4(), rockQ = new THREE.Quaternion(), rockS = new THREE.Vector3(), rockP = new THREE.Vector3(), rockE = new THREE.Euler();
+function updateRocks(px, pz, budget) {
+  const R0 = Q.high ? rockRadius : 140;
+  const t0 = Math.floor((px - R0) / ROCK_TILE), t1 = Math.floor((px + R0) / ROCK_TILE), u0 = Math.floor((pz - R0) / ROCK_TILE), u1 = Math.floor((pz + R0) / ROCK_TILE);
+  const keys = [];
+  const start = performance.now();
+  for (let i = t0; i <= t1; i++) for (let j = u0; j <= u1; j++) {
+    const cx = (i + 0.5) * ROCK_TILE - px, cz = (j + 0.5) * ROCK_TILE - pz;
+    if (cx * cx + cz * cz > (R0 + ROCK_TILE) * (R0 + ROCK_TILE)) continue;
+    const k = i + ',' + j;
+    if (!rockTiles.has(k)) { if (performance.now() - start > budget) continue; rockTiles.set(k, genRockTile(i, j)); }
+    keys.push(k);
+  }
+  const sig = keys.length + ':' + Math.floor(px / 10) + ',' + Math.floor(pz / 10) + ':' + keys[0] + ':' + keys[keys.length - 1];
+  if (sig === rockKeys) return;
+  rockKeys = sig;
+  const counts = rockMeshes.map(() => 0), countsFar = rockMeshes.map(() => 0);
+  for (const k of keys) for (const r of rockTiles.get(k)) {
+    const d2 = (r.x - px) * (r.x - px) + (r.z - pz) * (r.z - pz);
+    const near = d2 < 70 * 70 || r.r > 1.0;
+    if (!near && r.r < 0.3 && d2 > 160 * 160) continue;     // tiny stones far away are invisible anyway
+    const arr = near ? counts : countsFar, m = (near ? rockMeshes : rockMeshesFar)[r.v], c = arr[r.v];
+    if (c >= ROCK_CAP) continue;
+    rockE.set(r.rx, r.ry, 0); rockQ.setFromEuler(rockE); rockP.set(r.x, r.y, r.z); rockS.setScalar(r.r);
+    rockM.compose(rockP, rockQ, rockS); m.setMatrixAt(c, rockM); arr[r.v] = c + 1;
+  }
+  const fin = (ms, cs) => ms.forEach((m, i) => { m.count = cs[i]; m.instanceMatrix.needsUpdate = true; if (m.count) m.computeBoundingSphere(); });
+  fin(rockMeshes, counts); fin(rockMeshesFar, countsFar);
+  if (rockTiles.size > 900) for (const k of rockTiles.keys()) { if (!keys.includes(k)) rockTiles.delete(k); if (rockTiles.size < 600) break; }
+}
+function clearRocks() { rockTiles.clear(); rockKeys = ''; rockMeshes.forEach(m => m.count = 0); rockMeshesFar.forEach(m => m.count = 0); rockSeed = (rockSeed + 1) % 1000; }
+// collisions with the bigger boulders
+function rockCollide(o, radius, clearance) {
+  const ti = Math.floor(o.x / ROCK_TILE), tj = Math.floor(o.z / ROCK_TILE);
+  let hit = null;
+  for (let i = ti - 1; i <= ti + 1; i++) for (let j = tj - 1; j <= tj + 1; j++) {
+    const t = rockTiles.get(i + ',' + j); if (!t) continue;
+    for (const r of t) {
+      if (r.r < clearance) continue;
+      const dx = o.x - r.x, dz = o.z - r.z, d = Math.hypot(dx, dz), min = radius + r.r * 0.85;
+      if (d < min && d > 1e-4) { o.x = r.x + dx / d * min; o.z = r.z + dz / d * min; hit = { nx: dx / d, nz: dz / d, r: r.r }; }
+    }
+  }
+  return hit;
+}
+
+// ---- post-processing: MSAA HDR target, bloom, gentle film grade
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
+composer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+composer.addPass(new RenderPass(surfScene, sCam));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.5, 1.05);
+composer.addPass(bloom);
+const gradePass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uT: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uT; varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uT) * 43758.5453); }
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      vec2 q = vUv - 0.5; float vig = 1.0 - dot(q, q) * 0.55;
+      c.rgb *= vig;
+      c.rgb = mix(c.rgb, c.rgb * vec3(1.03, 1.0, 0.96), 0.6);     // a touch of warmth in the light
+      c.rgb += (h(vUv * 917.0) - 0.5) * 0.012 * (0.3 + c.rgb);
+      gl_FragColor = c; }`,
+});
+composer.addPass(gradePass);
+composer.addPass(new OutputPass());
+function setQuality(high, quiet) {
+  Q.high = high;
+  perfState.max = high ? Math.min(devicePixelRatio, 1.5) : 1;
+  perfState.scale = high ? Math.min(perfState.max, Math.max(perfState.scale, 0.75)) : Math.min(perfState.scale, 1);
+  applyScale();
+  for (const [, b] of built) b.mesh.castShadow = (ROOT >> b.mesh.userData.L) <= (high ? 1024 : 256);
+  rockKeys = '';
+  $('bGfx').textContent = high ? 'Graphics: High' : 'Graphics: Low';
+  if (!quiet) toast(high ? 'High graphics' : 'Low graphics');
+}
+
+// ---- wheel tracks
+const TRACK_MAX = 6000;
+const trackGeo = new THREE.BufferGeometry();
+const trackPos = new Float32Array(TRACK_MAX * 6 * 3);
+trackGeo.setAttribute('position', new THREE.BufferAttribute(trackPos, 3));
+trackGeo.setDrawRange(0, 0);
+const trackMesh = new THREE.Mesh(trackGeo, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+trackMesh.frustumCulled = false; trackMesh.renderOrder = 1; surfScene.add(trackMesh);
+let trackCount = 0, trackHead = 0;
+const lastTrack = [null, null];
+function addTrackQuad(a, b, w) {
+  const dx = b[0] - a[0], dz = b[2] - a[2], L = Math.hypot(dx, dz) || 1, nx = -dz / L * w / 2, nz = dx / L * w / 2;
+  const v = [[a[0] + nx, a[1], a[2] + nz], [a[0] - nx, a[1], a[2] - nz], [b[0] + nx, b[1], b[2] + nz], [b[0] - nx, b[1], b[2] - nz]];
+  const tri = [v[0], v[1], v[2], v[1], v[3], v[2]];
+  const base = trackHead * 18;
+  tri.forEach((p, i) => { trackPos[base + i * 3] = p[0]; trackPos[base + i * 3 + 1] = p[1]; trackPos[base + i * 3 + 2] = p[2]; });
+  trackHead = (trackHead + 1) % TRACK_MAX; trackCount = Math.min(TRACK_MAX, trackCount + 1);
+  trackGeo.setDrawRange(0, trackCount * 6); trackGeo.attributes.position.needsUpdate = true;
+}
+function trackStep(side, x, z, w) {
+  const p = [x, hPhys(x, z) + 0.035, z];
+  const last = lastTrack[side];
+  if (!last) { lastTrack[side] = p; return; }
+  const d = Math.hypot(p[0] - last[0], p[2] - last[2]);
+  if (d > 4) { lastTrack[side] = p; return; }
+  if (d >= 0.35) { addTrackQuad(last, p, w); lastTrack[side] = p; }
+}
+
+// ---- dust (ballistic: no air on the Moon)
+const DUST = 2500;
+const dustPos = new Float32Array(DUST * 3).fill(-1e6), dustVel = new Float32Array(DUST * 3), dustLife = new Float32Array(DUST), dustFloor = new Float32Array(DUST);
+const dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0x77726b, size: 0.07, sizeAttenuation: true, transparent: true, opacity: 0.9, depthWrite: false, map: (() => { const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d'); const g = x.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, '#fff'); g.addColorStop(0.5, 'rgba(255,255,255,.6)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })(), alphaTest: 0.02 }));
+dust.frustumCulled = false; surfScene.add(dust);
+let dustHead = 0;
+function emitDust(x, y, z, vx, vy, vz, floor) {
+  const i = dustHead; dustHead = (dustHead + 1) % DUST;
+  dustPos[i * 3] = x; dustPos[i * 3 + 1] = y; dustPos[i * 3 + 2] = z;
+  dustVel[i * 3] = vx; dustVel[i * 3 + 1] = vy; dustVel[i * 3 + 2] = vz; dustLife[i] = 4; dustFloor[i] = floor;
+}
+function stepDust(dt) {
+  for (let i = 0; i < DUST; i++) {
+    if (dustLife[i] <= 0) continue;
+    dustLife[i] -= dt;
+    dustVel[i * 3 + 1] -= G * dt;
+    dustPos[i * 3] += dustVel[i * 3] * dt; dustPos[i * 3 + 1] += dustVel[i * 3 + 1] * dt; dustPos[i * 3 + 2] += dustVel[i * 3 + 2] * dt;
+    if (dustPos[i * 3 + 1] < dustFloor[i] || dustLife[i] <= 0) { dustLife[i] = 0; dustPos[i * 3 + 1] = -1e6; }
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+}
+
+// ============================================================ input
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  keys.add(e.code);
+  if (mode !== 'surface') return;
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'KeyC') cycleCamera();
+  if (e.code === 'KeyE') toggleExit();
+  if (e.code === 'KeyR') resetVehicle();
+  if (e.code === 'KeyM') toOrbit();
+  if (e.code === 'KeyH') $('hudTR').classList.toggle('hidden');
+  if (e.code === 'KeyL') setHeadlights(!headlights.on);
+  if (e.code === 'KeyG') setQuality(!Q.high);
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+document.querySelectorAll('#touch button').forEach(b => {
+  b.addEventListener('pointerdown', e => { e.preventDefault(); keys.add(b.dataset.k); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => keys.delete(b.dataset.k));
+});
+const camState = { mode: 0, yawOff: 0, pitch: 0.28, dist: 11, dragging: false, lastDrag: 0, smoothYaw: Math.PI, shake: 0 };
+let dragPt = null;
+canvas.addEventListener('pointerdown', e => { if (mode === 'surface') { dragPt = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId); } });
+canvas.addEventListener('pointermove', e => {
+  if (mode !== 'surface' || !dragPt) return;
+  camState.yawOff -= (e.clientX - dragPt[0]) * 0.006;
+  camState.pitch = Math.max(-0.35, Math.min(1.45, camState.pitch + (e.clientY - dragPt[1]) * 0.005));
+  dragPt = [e.clientX, e.clientY]; camState.lastDrag = performance.now();
+});
+canvas.addEventListener('pointerup', () => { dragPt = null; });
+canvas.addEventListener('wheel', e => {
+  if (mode !== 'surface') return;
+  camState.dist = Math.max(3, Math.min(2500, camState.dist * Math.pow(1.0015, e.deltaY)));
+}, { passive: true });
+
+function cycleCamera() { camState.mode = (camState.mode + 1) % 2; camState.yawOff = 0; camState.pitch = camState.mode === 1 ? 0 : 0.28; toast(camState.mode === 1 ? 'Mast camera' : 'Chase camera'); }
+function toggleExit() {
+  if (!astro.active) {
+    if (Math.abs(rover.speed) > 2 || rover.air) { toast('Stop the rover first'); return; }
+    const l = [Math.cos(rover.yaw), 0, -Math.sin(rover.yaw)];
+    astro.x = rover.x + l[0] * 2.4; astro.z = rover.z + l[2] * 2.4; astro.y = hPhys(astro.x, astro.z) + 0.3; astro.vy = 0; astro.yaw = rover.yaw; astro.active = true;
+    astroObj.visible = true; camState.dist = Math.max(5, Math.min(camState.dist, 8)); camState.mode = 0;
+    toast('Walking · Space to jump · E near rover to board');
+  } else {
+    if (Math.hypot(astro.x - rover.x, astro.z - rover.z) > 5) { toast('Walk back to the rover to board'); return; }
+    astro.active = false; astroObj.visible = false; camState.dist = 11; toast('Back in the rover');
+  }
+  $('bExit').textContent = astro.active ? 'Board rover' : 'Exit rover';
+}
+function resetVehicle() {
+  if (astro.active) { astro.y = hPhys(astro.x, astro.z) + 0.5; astro.vy = 0; return; }
+  rover.speed = 0; rover.vy = 0; rover.air = false; rover.y = hPhys(rover.x, rover.z) + 0.3; toast('Rover reset');
+}
+$('bLights').onclick = () => setHeadlights(!headlights.on); $('bGfx').onclick = () => setQuality(!Q.high);
+$('bExit').onclick = toggleExit; $('bCam').onclick = cycleCamera; $('bOrbit').onclick = () => toOrbit();
+
+let toastTimer;
+function toast(t) { const el = $('toast'); el.textContent = t; el.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.opacity = 0, 2200); }
+
+// ============================================================ sun
+function updateSun() {
+  const el = +$('sunEl').value * D2R, az = +$('sunAz').value * D2R;
+  $('vSunEl').textContent = $('sunEl').value + '°'; $('vSunAz').textContent = $('sunAz').value + '°';
+  // azimuth measured from north toward east; local north = -z, east = +x
+  sunDir.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
+  csm.lightDirection.copy(sunDir).negate();
+  earthMat.uniforms.sunW.value.copy(sunDir);
+}
+$('sunEl').oninput = updateSun; $('sunAz').oninput = updateSun; updateSun();
+
+// ============================================================ landing / orbit transitions
+let site = null, poi = null;
+const fade = (on, text = '') => { $('fade').style.opacity = on ? 1 : 0; $('fadeText').textContent = text; return new Promise(r => setTimeout(r, on ? 520 : 0)); };
+function showUI(m) {
+  for (const id of ['globeUI', 'globeHint']) $(id).classList.toggle('hidden', m !== 'globe');
+  for (const id of ['hudTL', 'hudBottom', 'hudTR']) $(id).classList.toggle('hidden', m !== 'surface');
+  $('touch').classList.toggle('on', m === 'surface');
+  $('hover').classList.add('hidden');
+}
+async function ensurePatchesNear(lat, lon) {
+  const f = makeFrame(lat, lon);
+  const jobs = [];
+  for (const s of SITES) {
+    if (PATCHES.some(p => p.id === s.id) || s.loading) continue;
+    const sf = makeFrame(s.lat, s.lon);
+    const d = f.C[0] * sf.C[0] + f.C[1] * sf.C[1] + f.C[2] * sf.C[2];
+    if (d < Math.cos(150000 / R)) continue;
+    s.loading = true;
+    jobs.push(loadHeight(`patch_${s.id}.png`).then(h => { PATCHES.push({ id: s.id, F: sf, n: h.w, sp: 240, data: h.data }); terrainVersion++; }).catch(console.error));
+    if (s.colour) jobs.push(loadBitmap(`cpatch_${s.id}.jpg`).then(b => { CPATCHES.push({ id: s.id, F: sf, n: b.w, sp: 480, px: b.px }); terrainVersion++; }).catch(console.error));
+  }
+  return Promise.all(jobs);
+}
+async function land(s) {
+  if (mode === 'landing') return;
+  mode = 'landing'; controls.enabled = false;
+  await fade(true, `Descending to ${fmtLat(s.lat)} ${fmtLon(s.lon)}…`);
+  site = s;
+  FR = makeFrame(s.lat, s.lon);
+  await Promise.all([...tilesAround(s.lat, s.lon).map(ensureTile), ensurePatchesNear(s.lat, s.lon)]);
+  clearTerrain(); clearRocks();
+  trackCount = 0; trackHead = 0; trackGeo.setDrawRange(0, 0); lastTrack[0] = lastTrack[1] = null;
+  dustLife.fill(0); dustPos.fill(-1e6);
+  const sp = s.spawn || [0, 0];
+  rover.x = sp[0]; rover.z = sp[1]; rover.yaw = s.yaw ?? Math.PI; rover.speed = 0; rover.vy = 0; rover.air = false; rover.ground = undefined;
+  rover.y = hPhys(rover.x, rover.z);
+  rover.q.setFromEuler(new THREE.Euler(0, rover.yaw, 0));
+  astro.active = false; astroObj.visible = false; $('bExit').textContent = 'Exit rover';
+  // lunar module parked near the rover
+  const lx = rover.x + Math.sin(rover.yaw + 2.3) * 32, lz = rover.z + Math.cos(rover.yaw + 2.3) * 32;
+  localToUnit(lx, lz); lmUnit = [UX, UY, UZ];
+  placeLM();
+  camState.smoothYaw = rover.yaw; camState.yawOff = 0; camState.pitch = 0.28; camState.dist = 11; camState.mode = 0;
+  $('siteName').textContent = s.name;
+  poi = null;
+  if (s.poi) { localToUnit(s.poi[0], s.poi[1]); poi = { u: [UX, UY, UZ], label: s.poi[2] }; }
+  document.querySelectorAll('.poiRow').forEach(el => el.style.display = poi ? '' : 'none');
+  updateTerrain(rover.x, rover.z, 0, true);
+  mode = 'surface'; showUI('surface'); perfState.t0 = 0;
+  await fade(false);
+  toast(s.name);
+}
+function placeLM() {
+  const [x, z] = unitToLocal(lmUnit[0], lmUnit[1], lmUnit[2]);
+  lmObj.position.set(x, Math.min(hPhys(x - 2.5, z), hPhys(x + 2.5, z), hPhys(x, z - 2.5), hPhys(x, z + 2.5), hPhys(x, z)) - 0.15, z);
+}
+async function toOrbit() {
+  mode = 'landing';
+  await fade(true, 'Returning to orbit…');
+  if (site) {
+    const la = site.lat * D2R, lo = site.lon * D2R;
+    const p = new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo));
+    gCam.position.copy(p.multiplyScalar(2.6)); controls.update();
+  }
+  mode = 'globe'; controls.enabled = true; showUI('globe');
+  await fade(false);
+}
+// re-centre the local frame when we roam far, keeping float precision high
+function recentre() {
+  localToUnit(rover.x, rover.z);
+  const P = [UX, UY, UZ];
+  const old = FR;
+  const fwd = [Math.sin(rover.yaw), Math.cos(rover.yaw)];
+  const fx = old.E.map((e, k) => e * fwd[0] - old.N[k] * fwd[1]);   // world tangent of heading
+  FR = makeFrame(unitLat(P[1]), unitLon(P[0], P[2]));
+  const ex = fx[0] * FR.E[0] + fx[1] * FR.E[1] + fx[2] * FR.E[2], nz = -(fx[0] * FR.N[0] + fx[1] * FR.N[1] + fx[2] * FR.N[2]);
+  const dYaw = Math.atan2(ex, nz) - rover.yaw;
+  rover.yaw += dYaw; rover.x = 0; rover.z = 0;
+  rover.q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dYaw));
+  camState.smoothYaw += dYaw;
+  const remap = (x, z) => { localToUnit(x, z, old); return unitToLocal(UX, UY, UZ); };
+  if (astro.active) { const [ax, az] = remap(astro.x, astro.z); astro.x = ax; astro.z = az; astro.yaw += dYaw; }
+  for (let i = 0; i < trackCount * 6; i++) { const [x, z] = remap(trackPos[i * 3], trackPos[i * 3 + 2]); trackPos[i * 3] = x; trackPos[i * 3 + 2] = z; }
+  trackGeo.attributes.position.needsUpdate = true; lastTrack[0] = lastTrack[1] = null;
+  dustLife.fill(0); dustPos.fill(-1e6);
+  clearTerrain(); clearRocks(); placeLM();
+  updateTerrain(rover.x, rover.z, 0, true);
+  ensurePatchesNear(FR.lat, FR.lon);
+}
+
+// ============================================================ simulation
+const tmpE = new THREE.Euler(), tmpQ = new THREE.Quaternion();
+function stepRover(dt) {
+  const v = rover, drive = !astro.active;
+  const thr = drive ? ((keys.has('KeyW') || keys.has('ArrowUp')) ? 1 : 0) - ((keys.has('KeyS') || keys.has('ArrowDown')) ? 1 : 0) : 0;
+  const steer = drive ? ((keys.has('KeyA') || keys.has('ArrowLeft')) ? 1 : 0) - ((keys.has('KeyD') || keys.has('ArrowRight')) ? 1 : 0) : 0;
+  const boost = drive && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+  const brake = drive && keys.has('Space');
+  if (!v.air) {
+    let a = thr * (boost ? 5.5 : 3.2) - G * Math.sin(v.pitch);
+    v.speed += a * dt;
+    let dec = brake ? 7 : thr === 0 ? 0.9 : 0.25;
+    if (Math.abs(v.speed) <= dec * dt) v.speed = 0; else v.speed -= Math.sign(v.speed) * dec * dt;
+    const vmax = boost ? 18 : 9;
+    v.speed = Math.max(-5, Math.min(vmax, v.speed));
+    const turn = steer * 0.85 * Math.max(0.35, Math.min(1, Math.abs(v.speed) / 4)) / (1 + Math.abs(v.speed) / 18);
+    v.yaw += turn * (v.speed < -0.2 ? -1 : 1) * dt;
+  } else v.airTime += dt;
+  const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw), lx = Math.cos(v.yaw), lz = -Math.sin(v.yaw);
+  v.x += fx * v.speed * dt; v.z += fz * v.speed * dt;
+  const hit = rockCollide(v, 1.35, v.air ? 0.9 : 0.42);
+  if (hit) {
+    const along = fx * hit.nx + fz * hit.nz;
+    if (along < -0.3 && Math.abs(v.speed) > 1.5) { camState.shake = Math.min(1, Math.abs(v.speed) / 15); for (let k = 0; k < 20; k++) emitDust(v.x - hit.nx * 1.4, v.y + 0.3, v.z - hit.nz * 1.4, (Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2, v.y - 0.3); }
+    if (along < -0.3) v.speed *= -0.25; else v.speed *= 0.97;
+  }
+  const HL = 1.15, HW = 1.05;
+  const hFL = hPhys(v.x + fx * HL + lx * HW, v.z + fz * HL + lz * HW), hFR = hPhys(v.x + fx * HL - lx * HW, v.z + fz * HL - lz * HW);
+  const hRL = hPhys(v.x - fx * HL + lx * HW, v.z - fz * HL + lz * HW), hRR = hPhys(v.x - fx * HL - lx * HW, v.z - fz * HL - lz * HW);
+  const front = (hFL + hFR) / 2, rear = (hRL + hRR) / 2, left = (hFL + hRL) / 2, right = (hFR + hRR) / 2;
+  const ground = (front + rear) / 2;
+  const pitch = Math.atan2(front - rear, 2 * HL), roll = Math.atan2(left - right, 2 * HW);
+  // suspension: the body follows the ground while the wheels can reach it, otherwise it flies
+  const prevGround = v.ground ?? ground; v.ground = ground;
+  const vg = (ground - prevGround) / dt;
+  v.vy -= G * dt; v.y += v.vy * dt;
+  if (v.y <= ground) {
+    if (v.air) {
+      const impact = -v.vy;
+      if (impact > 1.5) { camState.shake = Math.min(1, impact / 8); for (let k = 0; k < 60 * Math.min(1, impact / 6); k++) { const a = Math.random() * 6.28, s = 0.5 + Math.random() * impact * 0.4; emitDust(v.x + Math.cos(a) * 1.3, ground + 0.1, v.z + Math.sin(a) * 1.3, Math.cos(a) * s, Math.random() * impact * 0.4, Math.sin(a) * s, ground - 0.3); } }
+      if (v.airTime > 1.2) toast(`${v.airTime.toFixed(1)} s of air`);
+    }
+    v.y = ground;
+    v.vy = Math.max(v.vy, Math.min(vg * 0.55, 6));    // suspension soaks up part of each bump
+  }
+  const wasAir = v.air;
+  v.air = v.y - ground > 0.35;
+  if (v.air && !wasAir) v.airTime = 0;
+  if (!v.air) v.pitch = pitch;
+  tmpE.set(0, v.yaw, 0, 'YXZ'); tmpQ.setFromEuler(tmpE);
+  if (!v.air) { tmpE.set(-pitch, v.yaw, roll, 'YXZ'); tmpQ.setFromEuler(tmpE); }
+  else { tmpE.setFromQuaternion(v.q, 'YXZ'); tmpE.y = v.yaw; tmpQ.setFromEuler(tmpE); }
+  v.q.slerp(tmpQ, 1 - Math.exp(-(v.air ? 1.2 : 14) * dt));
+  // tracks & dust
+  if (!v.air && Math.abs(v.speed) > 0.3) {
+    trackStep(0, v.x - fx * 0.2 + lx * 1.05, v.z - fz * 0.2 + lz * 1.05, 0.42);
+    trackStep(1, v.x - fx * 0.2 - lx * 1.05, v.z - fz * 0.2 - lz * 1.05, 0.42);
+    const n = Math.min(6, Math.abs(v.speed) * 0.4);
+    for (let k = 0; k < n; k++) {
+      const side = Math.random() < 0.5 ? 1 : -1, sx = v.x - fx * 1.25 + lx * 1.05 * side, sz = v.z - fz * 1.25 + lz * 1.05 * side;
+      const s = Math.abs(v.speed) * (0.15 + Math.random() * 0.35) * Math.sign(v.speed);
+      emitDust(sx, (side > 0 ? hRL : hRR) + 0.2, sz, -fx * s + (Math.random() - 0.5) * 0.8, 0.4 + Math.random() * Math.abs(v.speed) * 0.25, -fz * s + (Math.random() - 0.5) * 0.8, ground - 0.4);
+    }
+  } else if (v.air) { lastTrack[0] = lastTrack[1] = null; }
+}
+function stepAstro(dt, camYaw) {
+  const a = astro;
+  const f = ((keys.has('KeyW') || keys.has('ArrowUp')) ? 1 : 0) - ((keys.has('KeyS') || keys.has('ArrowDown')) ? 1 : 0);
+  const s = ((keys.has('KeyA') || keys.has('ArrowLeft')) ? 1 : 0) - ((keys.has('KeyD') || keys.has('ArrowRight')) ? 1 : 0);
+  const run = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  let mx = 0, mz = 0;
+  if (f || s) {
+    const fx = Math.sin(camYaw), fz = Math.cos(camYaw), lx = Math.cos(camYaw), lz = -Math.sin(camYaw);
+    mx = fx * f + lx * s; mz = fz * f + lz * s; const L = Math.hypot(mx, mz); mx /= L; mz /= L;
+    const target = Math.atan2(mx, mz); let d = target - a.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); a.yaw += d * Math.min(1, dt * 8);
+  }
+  const speed = run ? 3.6 : 1.9;
+  a.x += mx * speed * dt; a.z += mz * speed * dt;
+  rockCollide(a, 0.35, a.air ? 0.6 : 0.3);
+  const g = hPhys(a.x, a.z);
+  if (a.air) {
+    a.vy -= G * dt; a.y += a.vy * dt;
+    if (a.y <= g) { a.y = g; a.air = false; if (a.vy < -1.2) for (let k = 0; k < 14; k++) { const an = Math.random() * 6.28; emitDust(a.x, g + 0.05, a.z, Math.cos(an) * 0.6, Math.random() * 0.6, Math.sin(an) * 0.6, g - 0.2); } a.vy = 0; }
+  } else {
+    a.y = g;
+    if (keys.has('Space')) { a.vy = 2.6; a.air = true; }
+    else if (mx || mz) { a.vy = run ? 1.0 : 0.7; a.air = true; }   // the Apollo "bunny hop"
+  }
+  if (!a.air && (mx || mz)) trackStep(0, a.x, a.z, 0.25);
+}
+
+// ============================================================ camera
+const camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
+function updateCamera(dt) {
+  const focus = astro.active ? astro : rover;
+  const baseYaw = focus.yaw;
+  let d = baseYaw - camState.smoothYaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+  camState.smoothYaw += d * Math.min(1, dt * (astro.active ? 1.5 : 3));
+  if (!dragPt && performance.now() - camState.lastDrag > 2500 && Math.abs(rover.speed) > 2 && !astro.active) camState.yawOff *= Math.exp(-dt * 1.2);
+  if (camState.mode === 1 && !astro.active) {
+    const mast = new THREE.Vector3(-0.45, 2.25, 0.95).applyQuaternion(rover.q).add(roverObj.position);
+    sCam.position.copy(mast);
+    tmpE.set(-camState.pitch * 0.6, Math.PI + camState.yawOff, 0, 'YXZ');
+    sCam.quaternion.copy(rover.q).multiply(tmpQ.setFromEuler(tmpE));
+    return;
+  }
+  const yaw = camState.smoothYaw + camState.yawOff;
+  const h = astro.active ? 1.4 : 1.3;
+  camTarget.set(focus.x, focus.y + h, focus.z);
+  const cp = Math.cos(camState.pitch), sp = Math.sin(camState.pitch);
+  camPos.set(focus.x - Math.sin(yaw) * cp * camState.dist, focus.y + h + sp * camState.dist, focus.z - Math.cos(yaw) * cp * camState.dist);
+  const gy = (Math.abs(camPos.x - rover.x) < 300 && Math.abs(camPos.z - rover.z) < 300 ? hPhys(camPos.x, camPos.z) : heightLocal(camPos.x, camPos.z)) + 0.6;
+  if (camPos.y < gy) camPos.y = gy;
+  if (camState.shake > 0) { camPos.x += (Math.random() - 0.5) * camState.shake * 0.5; camPos.y += (Math.random() - 0.5) * camState.shake * 0.5; camState.shake *= Math.exp(-dt * 6); if (camState.shake < 0.01) camState.shake = 0; }
+  sCam.position.copy(camPos); sCam.lookAt(camTarget);
+}
+
+// ============================================================ HUD
+let hudT = 0;
+const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+function updateHUD() {
+  const f = astro.active ? astro : rover;
+  localToUnit(f.x, f.z);
+  const lat = unitLat(UY), lon = unitLon(UX, UZ);
+  baseAt(UX, UY, UZ);
+  $('hPos').textContent = `${fmtLat(lat)}  ${fmtLon(lon)}`;
+  $('hElev').textContent = `${f.y >= 0 ? '+' : '−'}${Math.abs(f.y).toFixed(0)} m`;
+  $('hSrc').textContent = SRC;
+  if (poi) {
+    const [px2, pz2] = unitToLocal(poi.u[0], poi.u[1], poi.u[2]);
+    const dx = px2 - f.x, dz = pz2 - f.z, d = Math.hypot(dx, dz), br = (Math.atan2(dx, -dz) * R2D + 360) % 360;
+    $('hPoi').textContent = d < 150 ? `${poi.label} · you're there` : `${poi.label} · ${d >= 1000 ? (d / 1000).toFixed(1) + ' km' : d.toFixed(0) + ' m'} ${compass[Math.round(br / 45) % 8]}`;
+  }
+  const sp = astro.active ? (keys.size ? 1 : 0) * 0 : Math.abs(rover.speed) * 3.6;
+  $('hSpeed').textContent = astro.active ? 'EVA' : sp.toFixed(0);
+  let hd = (Math.atan2(Math.sin(f.yaw), -Math.cos(f.yaw)) * R2D + 360) % 360;
+  $('hHead').textContent = compass[Math.round(hd / 45) % 8]; $('hHeadDeg').textContent = hd.toFixed(0) + '°';
+  const air = astro.active ? astro.air : rover.air;
+  $('hAir').textContent = air ? Math.max(0, f.y - hPhys(f.x, f.z)).toFixed(1) + ' m' : '—';
+  // stream finer tiles as you roam
+  for (const i of tilesAround(lat, lon)) ensureTile(i);
+}
+
+// ============================================================ main loop
+let last = performance.now();
+// dynamic resolution: render fewer pixels when frames are slow, more when there is headroom
+const perfState = { scale: Math.min(devicePixelRatio, 1.5), max: Math.min(devicePixelRatio, 1.5), t: 0, frames: 0, good: 0, bad: 0 };
+function applyScale() {
+  renderer.setPixelRatio(perfState.scale); renderer.setSize(innerWidth, innerHeight);
+  composer.setPixelRatio(perfState.scale); composer.setSize(innerWidth, innerHeight);
+}
+function adaptPerf() {
+  const now = performance.now();
+  if (!perfState.t0) { perfState.t0 = now; perfState.frames = 0; return; }
+  perfState.frames++;
+  const el = (now - perfState.t0) / 1000;
+  if (el < 1) return;
+  const fps = perfState.frames / el; perfState.t0 = now; perfState.frames = 0;
+  $('hFps').textContent = `${fps.toFixed(0)} fps · ${Math.round(perfState.scale / perfState.max * 100)}% res`;
+  if (fps < 45 && perfState.scale > 0.5) { perfState.scale = Math.max(0.5, perfState.scale * 0.82); perfState.good = 0; applyScale(); }
+  else if (fps > 57 && perfState.scale < perfState.max && ++perfState.good >= 3) { perfState.scale = Math.min(perfState.max, perfState.scale * 1.12); perfState.good = 0; applyScale(); }
+  if (fps < 28 && perfState.scale <= 0.51 && Q.high) { if (++perfState.bad >= 2) { setQuality(false, true); toast('Switched to Low graphics for speed · G to change'); } }
+  else perfState.bad = 0;
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (mode === 'globe' || mode === 'landing' && !site) {
+    controls.update();
+    renderer.render(globeScene, gCam);
+    return;
+  }
+  if (mode === 'landing') { renderer.render(site ? surfScene : globeScene, site ? sCam : gCam); return; }
+  if (mode !== 'surface') return;
+  const sub = Math.ceil(dt / (1 / 120));
+  for (let i = 0; i < sub; i++) {
+    stepRover(dt / sub);
+    if (astro.active) stepAstro(dt / sub, camState.smoothYaw + camState.yawOff);
+  }
+  stepDust(dt);
+  if (Math.hypot(rover.x, rover.z) > 16000) recentre();
+  const focus = astro.active ? astro : rover;
+  updateTerrain(focus.x, focus.z, 5);
+  updateRocks(focus.x, focus.z, 3);
+  adaptPerf();
+  roverObj.position.set(rover.x, rover.y, rover.z); roverObj.quaternion.copy(rover.q);
+  if (astro.active) { astroObj.position.set(astro.x, astro.y, astro.z); astroObj.rotation.set(0, astro.yaw, 0); }
+  updateCamera(dt);
+  curvUniforms.uCamXZ.value.set(sCam.position.x, sCam.position.z);
+  sky.position.copy(sCam.position);
+  sunDisc.position.copy(sunDir).multiplyScalar(250000);
+  // Earth: the near side faces moon-fixed +X
+  const ex = FR.E[0], ey = FR.C[0], ez = -FR.N[0];
+  earth.position.set(ex, ey, ez).normalize().multiplyScalar(240000);
+  earth.visible = ey > -0.05;
+  earth.rotation.y += dt * 0.01;
+  sCam.updateMatrixWorld();
+  csm.update();
+  gradePass.uniforms.uT.value = (now % 10000) / 1000;
+  if (Q.high) composer.render(); else renderer.render(surfScene, sCam);
+  if ((hudT -= dt) < 0) { hudT = 0.15; updateHUD(); }
+}
+
+// ============================================================ boot
+(async function boot() {
+  try {
+    const [h4, col, rv, lm, as] = await Promise.all([
+      track(loadHeight('height4.png'), 'Global elevation'),
+      track(loadBitmap('color4k.jpg'), 'Surface colour'),
+      track(loadGLB('rover'), 'Rover'),
+      track(loadGLB('lm'), 'Lunar module'),
+      track(loadGLB('astronaut'), 'Astronaut'),
+    ]);
+    G4 = h4; COL = col;
+    const colTex = new THREE.CanvasTexture(col.cv); colTex.colorSpace = THREE.SRGBColorSpace; colTex.anisotropy = 8;
+    buildGlobe(colTex);
+    roverModel = prepModel(mergeStatic(rv)); roverObj.add(roverModel); addHeadlights();
+    lmModel = prepModel(mergeStatic(lm)); lmObj.add(lmModel);
+    astroModel = prepModel(as);
+    const s = 1.85 / 74.26; astroModel.scale.setScalar(s); astroModel.position.y = 37.13 * s;
+    astroObj.add(astroModel); astroObj.visible = false;
+    const list = $('sites');
+    list.innerHTML = '<div class="hd">High-detail terrain (~240 m data)</div>';
+    for (const st of SITES) {
+      const b = document.createElement('button');
+      b.innerHTML = `${st.name.replace(' · ', '<br><small style="color:var(--muted)">')}</small><span>${fmtLat(st.lat)}<br>${fmtLon(st.lon)}</span>`;
+      b.onclick = () => land(st); list.appendChild(b);
+    }
+    const hd = document.createElement('div'); hd.className = 'hd'; hd.textContent = 'Anywhere else (~1.9 km data)'; list.appendChild(hd);
+    const rb = document.createElement('button'); rb.innerHTML = 'Random spot<span>surprise me</span>';
+    rb.onclick = () => land({ name: 'Random landing', lat: Math.asin(Math.random() * 1.9 - 0.95) * R2D, lon: Math.random() * 360 - 180 });
+    list.appendChild(rb);
+    mode = 'globe'; controls.enabled = true; showUI('globe');
+    $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
+    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, state: () => mode, SITES,
+      sim: (sec, ks) => { ks.forEach(k => keys.add(k)); let air = 0, maxAir = 0, vmax = 0, wasAir = false; for (let i = 0; i < sec * 120; i++) { stepRover(1 / 120); if (astro.active) stepAstro(1 / 120, camState.smoothYaw); vmax = Math.max(vmax, rover.speed); if (rover.air && !wasAir) air++; wasAir = rover.air; if (rover.air) maxAir = Math.max(maxAir, rover.y - hPhys(rover.x, rover.z)); if (Math.hypot(rover.x, rover.z) > 16000) recentre(); } ks.forEach(k => keys.delete(k)); updateTerrain(rover.x, rover.z, 0, true); return { x: rover.x, z: rover.z, y: rover.y, vmax, airs: air, maxAir, ay: astro.y }; },
+    };
+  } catch (e) {
+    console.error(e); $('loadText').textContent = 'Failed to load: ' + e.message;
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
