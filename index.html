@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Moon Drive</title>
+<title>Moon &amp; Mars Drive</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
 <style>
@@ -30,6 +30,9 @@
   /* globe UI */
   #globeUI { top: 16px; left: 16px; width: 290px; padding: 16px; }
   #globeUI h1 { font-size: 22px; }
+  #planetTabs { display: flex; gap: 4px; padding: 3px; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 9px; margin-bottom: 12px; }
+  #planetTabs button { flex: 1; border: 0; background: transparent; font-family: "Barlow Condensed", sans-serif; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; padding: 6px; }
+  #planetTabs button.on { background: rgba(255,207,110,.16); color: var(--accent); }
   #globeUI .sub { color: var(--muted); font-size: 13px; margin: 2px 0 14px; line-height: 1.4; }
   .sites { display: grid; gap: 6px; }
   .sites button { text-align: left; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -75,19 +78,20 @@
 <canvas id="gl"></canvas>
 
 <div id="loading"><div class="box">
-  <h1>Moon Drive</h1>
-  <p>NASA LRO elevation &amp; colour data · NASA Perseverance model</p>
+  <h1>Moon &amp; Mars Drive</h1>
+  <p>NASA LRO &amp; MGS elevation data · NASA Perseverance model</p>
   <div class="bar"><div id="loadBar"></div></div>
   <div id="loadText">Starting…</div>
 </div></div>
 
 <div id="globeUI" class="panel hidden">
-  <h1>Pick a landing site</h1>
+  <div id="planetTabs"><button data-p="moon" class="on">Moon</button><button data-p="mars">Mars</button></div>
+  <h1 id="globeTitle">Pick a landing site</h1>
   <div class="sub">Drag to spin the Moon, scroll to zoom. Click anywhere on the surface to land there, or choose a site with extra-detailed terrain.</div>
   <div class="sites" id="sites"></div>
 </div>
 <div id="hover" class="hidden"></div>
-<div id="globeHint" class="panel hidden">Relief exaggerated 6× in orbit view · real scale on the surface</div>
+<div id="globeHint" class="panel hidden">Relief exaggerated in orbit view · real scale on the surface</div>
 
 <div id="hudTL" class="panel hidden">
   <h2 id="siteName">—</h2>
@@ -96,7 +100,7 @@
     <span>Elevation</span><span id="hElev">—</span>
     <span>Terrain data</span><span id="hSrc">—</span>
     <span class="poiRow">Target</span><span class="poiRow" id="hPoi">—</span>
-    <span>Gravity</span><span>1.62 m/s² · ⅙ g</span>
+    <span>Gravity</span><span id="hGrav">1.62 m/s² · ⅙ g</span>
   </div>
 </div>
 <div id="hudBottom" class="panel hidden">
@@ -150,9 +154,10 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const $ = id => document.getElementById(id);
-const R = 1737400, G = 1.62, D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+let R = 1737400, G = 1.62;
 
-const SITES = [
+const MOON_SITES = [
   { id: 'a11', name: 'Apollo 11 · Tranquility Base', lat: 0.67408, lon: 23.47297 },
   { id: 'a15', name: 'Apollo 15 · Hadley Rille', lat: 26.13224, lon: 3.63400, spawn: [-2150, 150], yaw: -Math.PI / 2 },
   { id: 'a17', name: 'Apollo 17 · Taurus-Littrow', lat: 20.19080, lon: 30.77168 },
@@ -162,8 +167,33 @@ const SITES = [
   { id: 'ina', name: 'Ina · possibly young volcanism', lat: 18.65, lon: 5.30, spawn: [0, 1500], yaw: Math.PI, colour: true, quiet: [18.66, 5.30, 3500], poi: [0, -303, 'Ina'] },
   { id: 'reiner', name: 'Reiner Gamma · magnetic swirl', lat: 7.4, lon: -59.0, colour: true, spawn: [-6480, -6960], yaw: Math.PI, poi: [4560, 10320, 'Brightest swirl'] },
 ];
+const MARS_SITES = [
+  { id: 'olympus', name: 'Olympus Mons · summit caldera rim', lat: 18.40, lon: -133.90, sp: 700, csp: 1400, colour: true, spawn: [29050, 52150], yaw: -2.848, poi: [19950, 22050, 'Caldera floor'] },
+  { id: 'valles', name: 'Valles Marineris · canyon rim', lat: -9.80, lon: -72.80, sp: 400, csp: 900, colour: true, spawn: [12434, -111234], yaw: 2.356 },
+  { id: 'jezero', name: 'Jezero crater · Perseverance landing', lat: 18.4447, lon: 77.4508, sp: 300, csp: 900, colour: true, spawn: [0, 0], yaw: -2.506, poi: [-2850, -3863, 'Delta front'] },
+  { id: 'gale', name: 'Gale crater · Curiosity landing', lat: -4.80, lon: 137.60, sp: 300, csp: 900, colour: true, spawn: [-9335, -12452], yaw: 0.692, poi: [14732, 16567, 'Mount Sharp summit'] },
+];
+const PLANETS = {
+  moon: {
+    id: 'moon', name: 'Moon', R: 1737400, G: 1.62, gText: '1.62 m/s² · ⅙ g', dir: '', exag: 6, root: 131072, atmo: false,
+    craterScale: 1, rockBase: 0.11, sunI: 3.6, albedo: 2.2, sites: MOON_SITES,
+    src: ['LOLA 64 px/° patch (~240 m)', 'LOLA 16 px/° (~1.9 km)', 'LOLA 4 px/° (loading finer…)'],
+    hd: 'High-detail terrain (~240 m data)', any: 'Anywhere else (~1.9 km data)',
+    credit: 'Terrain: NASA/GSFC/ASU LRO LOLA &amp; LROC (CGI Moon Kit) · Models: NASA 3D Resources',
+  },
+  mars: {
+    id: 'mars', name: 'Mars', R: 3389500, G: 3.711, gText: '3.71 m/s² · 0.38 g', dir: 'mars/', exag: 3, root: 1048576, atmo: true,
+    craterScale: 0.22, rockBase: 0.2, sunI: 2.6, albedo: 1.25, sites: MARS_SITES,
+    src: ['MOLA 128 px/° patch (~460 m)', 'MOLA 16 px/° (~3.7 km)', 'MOLA 4 px/° (loading finer…)'],
+    hd: 'High-detail terrain (~460 m MOLA data)', any: 'Anywhere else (~3.7 km data)',
+    credit: 'Terrain: NASA/GSFC MGS MOLA · Colour: Viking MDIM (USGS) · Models: NASA 3D Resources',
+  },
+};
+let PL = PLANETS.moon, SITES = PL.sites;
 // zones where the made-up craters are switched off, so they don't masquerade as the real feature
-const QUIET = SITES.filter(s => s.quiet).map(s => { const f = makeFrame(s.quiet[0], s.quiet[1]); return { x: f.C[0] * R, y: f.C[1] * R, z: f.C[2] * R, r: s.quiet[2] }; });
+let QUIET = [];
+function computeQuiet() { QUIET = SITES.filter(s => s.quiet).map(s => { const f = makeFrame(s.quiet[0], s.quiet[1]); return { x: f.C[0] * R, y: f.C[1] * R, z: f.C[2] * R, r: s.quiet[2] }; }); }
+computeQuiet();
 
 // ============================================================ renderer
 const canvas = $('gl');
@@ -255,7 +285,7 @@ function ensureTile(i) {
   if (T16[i] || T16loading.has(i)) return Promise.resolve();
   T16loading.add(i);
   const ty = (i / 4) | 0, tx = i % 4;
-  return loadHeight(`h16_${ty}_${tx}.png`).then(h => { T16[i] = h.data; T16loading.delete(i); terrainVersion++; })
+  return loadHeight(`${PL.dir}h16_${ty}_${tx}.png`).then(h => { T16[i] = h.data; T16loading.delete(i); terrainVersion++; })
     .catch(e => { console.error(e); T16loading.delete(i); });
 }
 function tilesAround(lat, lon) {
@@ -330,7 +360,7 @@ function craterField(X, Y, Z, step = 0) {
     const cx = Math.floor(X / cell), cy = Math.floor(Y / cell), cz = Math.floor(Z / cell);
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
       const ix = cx + dx, iy = cy + dy, iz = cz + dz;
-      if (hash3(ix, iy, iz, seed) > prob) continue;
+      if (hash3(ix, iy, iz, seed) > prob * PL.craterScale) continue;
       let ox = (ix + hash3(ix, iy, iz, seed + 1)) * cell, oy = (iy + hash3(ix, iy, iz, seed + 2)) * cell, oz = (iz + hash3(ix, iy, iz, seed + 3)) * cell;
       const s = R / Math.sqrt(ox * ox + oy * oy + oz * oz); ox *= s; oy *= s; oz *= s;   // centre on the surface
       if (Math.floor(ox / cell) !== ix || Math.floor(oy / cell) !== iy || Math.floor(oz / cell) !== iz) continue;   // must stay in its own cell
@@ -340,7 +370,7 @@ function craterField(X, Y, Z, step = 0) {
       const lim = 1.8 * r;
       if (d2 > lim * lim) continue;
       const t = Math.sqrt(d2) / r;
-      const age = hash3(ix, iy, iz, seed + 5);           // 0 fresh ... 1 eroded
+      const age = PL.atmo ? 0.35 + 0.65 * hash3(ix, iy, iz, seed + 5) : hash3(ix, iy, iz, seed + 5);   // 0 fresh ... 1 eroded (Mars: wind and dust soften everything)
       const depth = r * (0.22 - 0.14 * age), rim = r * (0.05 - 0.035 * age);
       if (t < 1) h += -depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t;
       else { const k = (t - 1) / 0.8; h += rim * (1 - k) * (1 - k); }
@@ -364,7 +394,7 @@ function baseAt(px, py, pz) {
   let hp = 0, w = 0;
   for (const p of PATCHES) {
     const d = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
-    if (d < 0.99) continue;
+    if (d < p.cosLim) continue;
     const u = (px * p.F.E[0] + py * p.F.E[1] + pz * p.F.E[2]) / d * R;
     const v = (px * p.F.N[0] + py * p.F.N[1] + pz * p.F.N[2]) / d * R;
     const fx = u / p.sp + (p.n - 1) / 2, fy = -v / p.sp + (p.n - 1) / 2;
@@ -373,11 +403,11 @@ function baseAt(px, py, pz) {
     const ww = edge >= 40 ? 1 : (edge / 40) * (edge / 40) * (3 - 2 * edge / 40);
     if (ww > w) { w = ww; hp = bicubicArr(p.data, p.n, fx, fy); }
   }
-  if (w >= 1) { SRC = 'LOLA 64 px/° patch (~240 m)'; return hp; }
+  if (w >= 1) { SRC = PL.src[0]; return hp; }
   const lat = unitLat(py), lon = unitLon(px, pz);
   const t = T16[tileIndex(lat, lon)];
   const hb = sample16(lat, lon);
-  SRC = w > 0.5 ? 'LOLA 64 px/° patch (~240 m)' : t ? 'LOLA 16 px/° (~1.9 km)' : 'LOLA 4 px/° (loading finer…)';
+  SRC = w > 0.5 ? PL.src[0] : t ? PL.src[1] : PL.src[2];
   return hb + (hp - hb) * w;
 }
 function surfaceAt(px, py, pz, step = 0) { return baseAt(px, py, pz) + detailAt(px, py, pz, step); }
@@ -398,7 +428,7 @@ function colourAt(px, py, pz, out) {
   }
   for (const p of CPATCHES) {
     const dd = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
-    if (dd < 0.99) continue;
+    if (dd < p.cosLim) continue;
     const u = (px * p.F.E[0] + py * p.F.E[1] + pz * p.F.E[2]) / dd * R, v = (px * p.F.N[0] + py * p.F.N[1] + pz * p.F.N[2]) / dd * R;
     const gx = u / p.sp + (p.n - 1) / 2, gy = -v / p.sp + (p.n - 1) / 2;
     const edge = Math.min(gx, gy, p.n - 2 - gx, p.n - 2 - gy);
@@ -414,10 +444,11 @@ function colourAt(px, py, pz, out) {
 }
 
 // ============================================================ physics height (matches the finest mesh triangulation)
-const ROOT = 131072, MIN_NODE = 32, SEG = 32, GRID = MIN_NODE / SEG;   // 1 m near the rover
+let ROOT = 131072;
+const MIN_NODE = 32, SEG = 32, GRID = MIN_NODE / SEG;   // 1 m near the rover
 const PH = new Map();
 function phNode(i, j) {
-  const key = i * 262144 + j;
+  const key = i * 2097152 + j;
   let v = PH.get(key);
   if (v === undefined) { v = heightLocal(-ROOT / 2 + i * GRID, -ROOT / 2 + j * GRID); if (PH.size > 60000) PH.clear(); PH.set(key, v); }
   return v;
@@ -441,7 +472,7 @@ gCam.position.set(0.6, 0.9, 3.3);
 const controls = new OrbitControls(gCam, canvas);
 controls.enableDamping = true; controls.minDistance = 1.25; controls.maxDistance = 7; controls.rotateSpeed = 0.45; controls.enablePan = false; controls.enabled = false;
 
-const sCam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 600000);
+const sCam = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2500000);
 
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
@@ -450,16 +481,23 @@ addEventListener('resize', () => {
 });
 
 // ---- globe
-let globe, globeMarker;
-const EXAG = 6;
+let globe = null, globeMarker, globeDots = new THREE.Group();
+(function setupGlobeScene() {
+  const sun = new THREE.DirectionalLight(0xffffff, 3.2); sun.position.set(-3, 1.2, 2.5); globeScene.add(sun);
+  globeScene.add(new THREE.AmbientLight(0xffffff, 0.12));
+  globeMarker = new THREE.Mesh(new THREE.RingGeometry(0.012, 0.018, 40), new THREE.MeshBasicMaterial({ color: 0xffcf6e, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthTest: false }));
+  globeMarker.visible = false; globeScene.add(globeMarker, globeDots);
+})();
 function buildGlobe(colTex) {
+  if (globe) { globeScene.remove(globe); globe.geometry.dispose(); globe.material.map?.dispose(); globe.material.dispose(); }
+  globeDots.clear();
   const W = 720, H = 360;
   const pos = new Float32Array((W + 1) * (H + 1) * 3), uv = new Float32Array((W + 1) * (H + 1) * 2);
   for (let j = 0, k = 0; j <= H; j++) {
     const lat = 90 - j * 180 / H, la = lat * D2R;
     for (let i = 0; i <= W; i++, k++) {
       const lon = -180 + i * 360 / W, lo = lon * D2R;
-      const r = 1 + g4bilinear(Math.max(-89.9, Math.min(89.9, lat)), lon) / R * EXAG;
+      const r = 1 + g4bilinear(Math.max(-89.9, Math.min(89.9, lat)), lon) / R * PL.exag;
       pos[k * 3] = r * Math.cos(la) * Math.cos(lo); pos[k * 3 + 1] = r * Math.sin(la); pos[k * 3 + 2] = -r * Math.cos(la) * Math.sin(lo);
       uv[k * 2] = i / W; uv[k * 2 + 1] = 1 - j / H;
     }
@@ -476,18 +514,15 @@ function buildGlobe(colTex) {
   g.computeVertexNormals();
   globe = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: colTex, roughness: 1, metalness: 0 }));
   globeScene.add(globe);
-  const sun = new THREE.DirectionalLight(0xffffff, 3.2); sun.position.set(-3, 1.2, 2.5); globeScene.add(sun);
-  globeScene.add(new THREE.AmbientLight(0xffffff, 0.12));
-  globeScene.add(makeStars(4000, 50, 1.2));
-  globeMarker = new THREE.Mesh(new THREE.RingGeometry(0.012, 0.018, 40), new THREE.MeshBasicMaterial({ color: 0xffcf6e, side: THREE.DoubleSide, transparent: true, opacity: 0.9, depthTest: false }));
-  globeMarker.visible = false; globeScene.add(globeMarker);
-  for (const s of SITES) {
-    const la = s.lat * D2R, lo = s.lon * D2R;
+  for (const st of SITES) {
+    const la = st.lat * D2R, lo = st.lon * D2R;
     const dot = new THREE.Mesh(new THREE.CircleGeometry(0.008, 20), new THREE.MeshBasicMaterial({ color: 0xffcf6e, side: THREE.DoubleSide }));
-    const p = new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo)).multiplyScalar(1.004);
-    dot.position.copy(p); dot.lookAt(p.clone().multiplyScalar(2)); globeScene.add(dot);
+    const pp = new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo));
+    const r = 1 + g4bilinear(st.lat, st.lon) / R * PL.exag + 0.004;
+    dot.position.copy(pp).multiplyScalar(r); dot.lookAt(pp.clone().multiplyScalar(r * 2)); globeDots.add(dot);
   }
 }
+globeScene.add(makeStars(4000, 50, 1.2));
 function makeStars(n, radius, size) {
   const p = new Float32Array(n * 3), c = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
@@ -553,20 +588,46 @@ csm.lights.forEach((l, i) => { l.color.set(0xfff4e6); l.shadow.normalBias = [0.0
 const fill = new THREE.HemisphereLight(0x8fa6cc, 0x000000, 0.05);   // faint earthshine
 surfScene.add(fill);
 
-// environment for reflections: black sky above, sunlit regolith below
-(function makeEnv() {
+// environment for reflections: sky above (black on the Moon, butterscotch on Mars), sunlit ground below
+const pmrem = new THREE.PMREMGenerator(renderer);
+function makeEnv(skyRGB, groundRGB) {
   const s = new THREE.Scene();
   s.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({
-    side: THREE.BackSide,
+    side: THREE.BackSide, uniforms: { sk: { value: new THREE.Color(...skyRGB) }, gr: { value: new THREE.Color(...groundRGB) } },
     vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'varying vec3 vP; void main(){ float y = normalize(vP).y; vec3 c = y < 0.0 ? vec3(0.32, 0.30, 0.28) * smoothstep(0.0, -0.3, y) : vec3(0.0); gl_FragColor = vec4(c, 1.0); }',
+    fragmentShader: 'uniform vec3 sk; uniform vec3 gr; varying vec3 vP; void main(){ float y = normalize(vP).y; vec3 c = y < 0.0 ? gr * smoothstep(0.0, -0.3, y) : sk * (1.0 - y * 0.4); gl_FragColor = vec4(c, 1.0); }',
   })));
-  surfScene.environment = new THREE.PMREMGenerator(renderer).fromScene(s, 0).texture;
+  if (surfScene.environment) surfScene.environment.dispose();
+  surfScene.environment = pmrem.fromScene(s, 0).texture;
   surfScene.environmentIntensity = 0.6;
-})();
+}
+makeEnv([0, 0, 0], [0.32, 0.30, 0.28]);
+
+// Mars sky: butterscotch by day, blue glow around a setting sun; doubles as the colour of the distance haze
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(280000, 64, 32), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { sunD: { value: new THREE.Vector3(0, 1, 0) } },
+  vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform vec3 sunD; varying vec3 vD;
+    void main(){
+      vec3 d = normalize(vD); float h = max(d.y, 0.0), sd = max(dot(d, sunD), 0.0);
+      float day = smoothstep(-0.05, 0.4, sunD.y);
+      vec3 zen = vec3(0.30, 0.19, 0.12), hor = vec3(0.80, 0.58, 0.40);
+      vec3 c = mix(hor, zen, pow(h, 0.45)) * mix(0.08, 1.0, day);
+      c += vec3(0.30, 0.48, 0.80) * pow(sd, 14.0) * (1.4 - day * 0.8);
+      c += vec3(1.0, 0.85, 0.7) * pow(sd, 3.0) * 0.2 * day;
+      if (d.y < 0.0) c = hor * mix(0.08, 1.0, day) * 0.9;
+      gl_FragColor = vec4(c * 1.15, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+}));
+skyDome.renderOrder = -10; skyDome.visible = false;
+const hazeColour = new THREE.Color();
 
 // ---- sky: stars with a Milky Way band, glowing sun, real Earth
-const sky = new THREE.Group(); surfScene.add(sky);
+const sky = new THREE.Group(); surfScene.add(sky); sky.add(skyDome);
+const starFade = { value: 1 };
 const galN = new THREE.Vector3(0.35, 0.55, -0.76).normalize();
 (function makeSky() {
   const n = 16000, p = new Float32Array(n * 3), c = new Float32Array(n * 3), sz = new Float32Array(n);
@@ -586,15 +647,15 @@ const galN = new THREE.Vector3(0.35, 0.55, -0.76).normalize();
   g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('size', new THREE.BufferAttribute(sz, 1));
   const pr = Math.min(devicePixelRatio, 1.75);
   sky.add(new THREE.Points(g, new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uFade: starFade },
     vertexShader: `attribute float size; attribute vec3 color; varying vec3 vC; void main(){ vC = color; gl_PointSize = size * ${pr.toFixed(2)}; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: 'varying vec3 vC; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vC * a, a); }',
+    fragmentShader: 'uniform float uFade; varying vec3 vC; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d) * uFade; gl_FragColor = vec4(vC * a, a); }',
   })));
   // diffuse galactic glow
   sky.add(new THREE.Mesh(new THREE.SphereGeometry(310000, 64, 32), new THREE.ShaderMaterial({
-    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { gN: { value: galN } },
+    side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { gN: { value: galN }, uFade: starFade },
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform vec3 gN; varying vec3 vD;
+    fragmentShader: `uniform vec3 gN; uniform float uFade; varying vec3 vD;
       float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
       float vn(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
         return mix(mix(mix(h(i), h(i+vec3(1,0,0)), f.x), mix(h(i+vec3(0,1,0)), h(i+vec3(1,1,0)), f.x), f.y),
@@ -603,7 +664,7 @@ const galN = new THREE.Vector3(0.35, 0.55, -0.76).normalize();
         float n = vn(vD*6.0)*0.5 + vn(vD*14.0)*0.3 + vn(vD*32.0)*0.2;
         float dust = smoothstep(0.35, 0.7, vn(vD*9.0 + 3.0)) * exp(-b*b*300.0);
         vec3 c = vec3(0.55, 0.6, 0.75) * band * (0.35 + n) * (1.0 - dust*0.8) * 0.035;
-        gl_FragColor = vec4(c, 1.0); }`,
+        gl_FragColor = vec4(c * uFade, 1.0); }`,
   })));
 })();
 const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
@@ -712,7 +773,7 @@ function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
       const k = (b - 1) * n1 + (a - 1);
       colourAt(UX, UY, UZ, rgb);
       const br = 1 + BRIGHT;
-      col[k * 3] = rgb[0] * 2.2 * br; col[k * 3 + 1] = rgb[1] * 2.2 * br; col[k * 3 + 2] = rgb[2] * 2.2 * br;
+      const ag = PL.albedo; col[k * 3] = rgb[0] * ag * br; col[k * 3 + 1] = rgb[1] * ag * br; col[k * 3 + 2] = rgb[2] * ag * br;
     }
   }
   // stitch edges onto coarser neighbours: interpolate between their vertices so there are no cracks
@@ -797,7 +858,7 @@ function updateTerrain(px, pz, budgetMs, force = false) {
   const leaves = selectLeaves(px, pz);
   const leafSet = new Set(leaves.map(([L, i, j]) => nodeKey(L, i, j)));
   const levelAt = (x, z) => {
-    for (let L = 0; L <= 14; L++) {
+    for (let L = 0; L <= 20; L++) {
       const size = ROOT / (1 << L), i = Math.floor((x + ROOT / 2) / size), j = Math.floor((z + ROOT / 2) / size);
       if (i < 0 || j < 0 || i >= (1 << L) || j >= (1 << L)) return -1;
       if (leafSet.has(nodeKey(L, i, j))) return L;
@@ -964,7 +1025,7 @@ function genRockTile(ti, tj) {
     const h1 = hash3(ti, tj, k, 101 + rockSeed), h2 = hash3(ti, tj, k, 202 + rockSeed), h3 = hash3(ti, tj, k, 303 + rockSeed), h4 = hash3(ti, tj, k, 404 + rockSeed);
     const x = x0 + h1 * ROCK_TILE, z = z0 + h2 * ROCK_TILE;
     const y = heightLocal(x, z);
-    const dens = 0.11 + Math.min(1, BRIGHT * 2.2) * 0.6;
+    const dens = PL.rockBase + Math.min(1, BRIGHT * 2.2) * 0.6;
     if (h3 > dens) continue;
     const r = Math.min(2.6, 0.09 / Math.pow(h4 + 0.012, 0.62));
     if (r < 0.12) continue;
@@ -1087,13 +1148,14 @@ let dustHead = 0;
 function emitDust(x, y, z, vx, vy, vz, floor) {
   const i = dustHead; dustHead = (dustHead + 1) % DUST;
   dustPos[i * 3] = x; dustPos[i * 3 + 1] = y; dustPos[i * 3 + 2] = z;
-  dustVel[i * 3] = vx; dustVel[i * 3 + 1] = vy; dustVel[i * 3 + 2] = vz; dustLife[i] = 4; dustFloor[i] = floor;
+  dustVel[i * 3] = vx; dustVel[i * 3 + 1] = vy; dustVel[i * 3 + 2] = vz; dustLife[i] = PL.atmo ? 7 : 4; dustFloor[i] = floor;
 }
 function stepDust(dt) {
   for (let i = 0; i < DUST; i++) {
     if (dustLife[i] <= 0) continue;
     dustLife[i] -= dt;
     dustVel[i * 3 + 1] -= G * dt;
+    if (PL.atmo) { const k = Math.exp(-dt * 1.6); dustVel[i * 3] *= k; dustVel[i * 3 + 1] = dustVel[i * 3 + 1] * k - 0.15 * dt; dustVel[i * 3 + 2] *= k; dustPos[i * 3] += 0.6 * dt; }   // thin air drags it and a breeze carries it
     dustPos[i * 3] += dustVel[i * 3] * dt; dustPos[i * 3 + 1] += dustVel[i * 3 + 1] * dt; dustPos[i * 3 + 2] += dustVel[i * 3 + 2] * dt;
     if (dustPos[i * 3 + 1] < dustFloor[i] || dustLife[i] <= 0) { dustLife[i] = 0; dustPos[i * 3 + 1] = -1e6; }
   }
@@ -1133,7 +1195,7 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerup', () => { dragPt = null; });
 canvas.addEventListener('wheel', e => {
   if (mode !== 'surface') return;
-  camState.dist = Math.max(3, Math.min(2500, camState.dist * Math.pow(1.0015, e.deltaY)));
+  camState.dist = Math.max(3, Math.min(20000, camState.dist * Math.pow(1.0015, e.deltaY)));
 }, { passive: true });
 
 function cycleCamera() { camState.mode = (camState.mode + 1) % 2; camState.yawOff = 0; camState.pitch = camState.mode === 1 ? 0 : 0.28; toast(camState.mode === 1 ? 'Mast camera' : 'Chase camera'); }
@@ -1168,6 +1230,28 @@ function updateSun() {
   sunDir.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
   csm.lightDirection.copy(sunDir).negate();
   earthMat.uniforms.sunW.value.copy(sunDir);
+  applyAtmosphere();
+}
+const sstep = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function applyAtmosphere() {
+  const el = sunDir.y;   // sine of the sun's elevation
+  if (PL.atmo) {
+    const day = sstep(el, -0.05, 0.4);
+    skyDome.visible = true; skyDome.material.uniforms.sunD.value.copy(sunDir);
+    hazeColour.setRGB(0.80, 0.58, 0.40).multiplyScalar(0.08 + 0.92 * day);
+    if (!surfScene.fog) surfScene.fog = new THREE.FogExp2(0x000000, 1 / 45000);
+    surfScene.fog.color.copy(hazeColour);
+    starFade.value = 1 - sstep(el, 0.0, 0.12);
+    fill.color.setRGB(0.95, 0.72, 0.52); fill.groundColor.setRGB(0.35, 0.22, 0.14); fill.intensity = 0.15 + 0.75 * day;
+    const low = 1 - sstep(el, 0.0, 0.35);
+    csm.lights.forEach(l => { l.intensity = PL.sunI * (1 - 0.6 * low); l.color.setRGB(1, 0.94 - 0.14 * low, 0.86 - 0.22 * low); });
+    sunDisc.scale.setScalar(20000); sunDisc.material.color.setRGB(4, 3.9, 3.7);
+  } else {
+    skyDome.visible = false; surfScene.fog = null; starFade.value = 1;
+    fill.color.set(0x8fa6cc); fill.groundColor.set(0x000000); fill.intensity = 0.05;
+    csm.lights.forEach(l => { l.intensity = PL.sunI; l.color.set(0xfff4e6); });
+    sunDisc.scale.setScalar(30000); sunDisc.material.color.setRGB(6, 5.7, 5.2);
+  }
 }
 $('sunEl').oninput = updateSun; $('sunAz').oninput = updateSun; updateSun();
 
@@ -1187,10 +1271,11 @@ async function ensurePatchesNear(lat, lon) {
     if (PATCHES.some(p => p.id === s.id) || s.loading) continue;
     const sf = makeFrame(s.lat, s.lon);
     const d = f.C[0] * sf.C[0] + f.C[1] * sf.C[1] + f.C[2] * sf.C[2];
-    if (d < Math.cos(150000 / R)) continue;
+    if (d < Math.cos(((s.sp || 240) * 1024 * 0.7 + 50000) / R)) continue;
     s.loading = true;
-    jobs.push(loadHeight(`patch_${s.id}.png`).then(h => { PATCHES.push({ id: s.id, F: sf, n: h.w, sp: 240, data: h.data }); terrainVersion++; }).catch(console.error));
-    if (s.colour) jobs.push(loadBitmap(`cpatch_${s.id}.jpg`).then(b => { CPATCHES.push({ id: s.id, F: sf, n: b.w, sp: 480, px: b.px }); terrainVersion++; }).catch(console.error));
+    const pid = PL.id;
+    jobs.push(loadHeight(`${PL.dir}patch_${s.id}.png`).then(h => { if (PL.id !== pid) return; const sp = s.sp || 240; PATCHES.push({ id: s.id, F: sf, n: h.w, sp, data: h.data, cosLim: Math.cos(h.w * sp * 0.75 / R) }); terrainVersion++; }).catch(console.error));
+    if (s.colour) jobs.push(loadBitmap(`${PL.dir}cpatch_${s.id}.jpg`).then(b => { if (PL.id !== pid) return; const sp = s.csp || 480; CPATCHES.push({ id: s.id, F: sf, n: b.w, sp, px: b.px, cosLim: Math.cos(b.w * sp * 0.75 / R) }); terrainVersion++; }).catch(console.error));
   }
   return Promise.all(jobs);
 }
@@ -1213,6 +1298,7 @@ async function land(s) {
   const lx = rover.x + Math.sin(rover.yaw + 2.3) * 32, lz = rover.z + Math.cos(rover.yaw + 2.3) * 32;
   localToUnit(lx, lz); lmUnit = [UX, UY, UZ];
   placeLM();
+  if (Math.hypot(rover.x, rover.z) > 8000) recentre();
   camState.smoothYaw = rover.yaw; camState.yawOff = 0; camState.pitch = 0.28; camState.dist = 11; camState.mode = 0;
   $('siteName').textContent = s.name;
   poi = null;
@@ -1455,7 +1541,7 @@ function frame(now) {
   // Earth: the near side faces moon-fixed +X
   const ex = FR.E[0], ey = FR.C[0], ez = -FR.N[0];
   earth.position.set(ex, ey, ez).normalize().multiplyScalar(240000);
-  earth.visible = ey > -0.05;
+  earth.visible = PL.id === 'moon' && ey > -0.05;
   earth.rotation.y += dt * 0.01;
   sCam.updateMatrixWorld();
   csm.update();
@@ -1465,37 +1551,77 @@ function frame(now) {
 }
 
 // ============================================================ boot
+// ---- planets: load a planet's maps, rebuild the globe and the site list
+let planetLoading = false;
+function resetPlanetData() {
+  G4 = null; COL = null; T16.fill(null); T16loading.clear(); PATCHES.length = 0; CPATCHES.length = 0;
+  terrainVersion++; clearTerrain(); clearRocks();
+}
+async function loadPlanet(id, first = false) {
+  if (planetLoading) return;
+  planetLoading = true;
+  const P = PLANETS[id];
+  try {
+    if (!first) { mode = 'landing'; controls.enabled = false; await fade(true, `Travelling to ${P.name}…`); }
+    const [h4, col] = await Promise.all([
+      first ? track(loadHeight(P.dir + 'height4.png'), P.name + ' elevation') : loadHeight(P.dir + 'height4.png'),
+      first ? track(loadBitmap(P.dir + 'color4k.jpg'), P.name + ' colour') : loadBitmap(P.dir + 'color4k.jpg'),
+    ]);
+    PL = P; SITES = P.sites; R = P.R; G = P.G; ROOT = P.root;
+    curvUniforms.uInv2R.value = 1 / (2 * R);
+    computeQuiet(); resetPlanetData();
+    G4 = h4; COL = col;
+    for (const st of SITES) st.loading = false;
+    const colTex = new THREE.CanvasTexture(col.cv); colTex.colorSpace = THREE.SRGBColorSpace; colTex.anisotropy = 8;
+    buildGlobe(colTex);
+    if (P.atmo) makeEnv([0.55, 0.40, 0.28], [0.42, 0.28, 0.18]); else makeEnv([0, 0, 0], [0.32, 0.30, 0.28]);
+    applyAtmosphere();
+    buildSiteList();
+    document.querySelectorAll('#planetTabs button').forEach(b => b.classList.toggle('on', b.dataset.p === id));
+    $('credit').innerHTML = P.credit;
+    $('hGrav').textContent = P.gText;
+    lmObj.visible = P.id === 'moon';
+    document.title = `${P.name} Drive`;
+    try { history.replaceState(null, '', id === 'moon' ? location.pathname : '#mars'); } catch (e) {}
+    site = null;
+    if (!first) { mode = 'globe'; controls.enabled = true; showUI('globe'); await fade(false); }
+  } catch (e) { console.error(e); toast('Could not load ' + P.name); if (!first) { mode = 'globe'; controls.enabled = true; await fade(false); } }
+  planetLoading = false;
+}
+function buildSiteList() {
+  const list = $('sites');
+  list.innerHTML = `<div class="hd">${PL.hd}</div>`;
+  for (const st of SITES) {
+    const b = document.createElement('button');
+    b.innerHTML = `${st.name.replace(' · ', '<br><small style="color:var(--muted)">')}</small><span>${fmtLat(st.lat)}<br>${fmtLon(st.lon)}</span>`;
+    b.onclick = () => land(st); list.appendChild(b);
+  }
+  const hd = document.createElement('div'); hd.className = 'hd'; hd.textContent = PL.any; list.appendChild(hd);
+  const rb = document.createElement('button'); rb.innerHTML = 'Random spot<span>surprise me</span>';
+  rb.onclick = () => land({ name: 'Random landing', lat: Math.asin(Math.random() * 1.9 - 0.95) * R2D, lon: Math.random() * 360 - 180 });
+  list.appendChild(rb);
+  $('globeTitle').textContent = `Pick a landing site on ${PL.name === 'Moon' ? 'the Moon' : 'Mars'}`;
+}
+document.querySelectorAll('#planetTabs button').forEach(b => b.onclick = () => { if (b.dataset.p !== PL.id) loadPlanet(b.dataset.p); });
+
 (async function boot() {
   try {
-    const [h4, col, rv, lm, as] = await Promise.all([
-      track(loadHeight('height4.png'), 'Global elevation'),
-      track(loadBitmap('color4k.jpg'), 'Surface colour'),
+    const start = (location.hash === '#mars') ? 'mars' : 'moon';
+    const [, rv, lm, as] = await Promise.all([
+      loadPlanet(start, true),
       track(loadGLB('rover'), 'Rover'),
       track(loadGLB('lm'), 'Lunar module'),
       track(loadGLB('astronaut'), 'Astronaut'),
     ]);
-    G4 = h4; COL = col;
-    const colTex = new THREE.CanvasTexture(col.cv); colTex.colorSpace = THREE.SRGBColorSpace; colTex.anisotropy = 8;
-    buildGlobe(colTex);
+    if (!G4) throw new Error('terrain data');
     roverModel = prepModel(mergeStatic(rv)); roverObj.add(roverModel); addHeadlights();
-    lmModel = prepModel(mergeStatic(lm)); lmObj.add(lmModel);
+    lmModel = prepModel(mergeStatic(lm)); lmObj.add(lmModel); lmObj.visible = PL.id === 'moon';
     astroModel = prepModel(as);
     const s = 1.85 / 74.26; astroModel.scale.setScalar(s); astroModel.position.y = 37.13 * s;
     astroObj.add(astroModel); astroObj.visible = false;
-    const list = $('sites');
-    list.innerHTML = '<div class="hd">High-detail terrain (~240 m data)</div>';
-    for (const st of SITES) {
-      const b = document.createElement('button');
-      b.innerHTML = `${st.name.replace(' · ', '<br><small style="color:var(--muted)">')}</small><span>${fmtLat(st.lat)}<br>${fmtLon(st.lon)}</span>`;
-      b.onclick = () => land(st); list.appendChild(b);
-    }
-    const hd = document.createElement('div'); hd.className = 'hd'; hd.textContent = 'Anywhere else (~1.9 km data)'; list.appendChild(hd);
-    const rb = document.createElement('button'); rb.innerHTML = 'Random spot<span>surprise me</span>';
-    rb.onclick = () => land({ name: 'Random landing', lat: Math.asin(Math.random() * 1.9 - 0.95) * R2D, lon: Math.random() * 360 - 180 });
-    list.appendChild(rb);
     mode = 'globe'; controls.enabled = true; showUI('globe');
     $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
-    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, state: () => mode, SITES,
+    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
       sim: (sec, ks) => { ks.forEach(k => keys.add(k)); let air = 0, maxAir = 0, vmax = 0, wasAir = false; for (let i = 0; i < sec * 120; i++) { stepRover(1 / 120); if (astro.active) stepAstro(1 / 120, camState.smoothYaw); vmax = Math.max(vmax, rover.speed); if (rover.air && !wasAir) air++; wasAir = rover.air; if (rover.air) maxAir = Math.max(maxAir, rover.y - hPhys(rover.x, rover.z)); if (Math.hypot(rover.x, rover.z) > 16000) recentre(); } ks.forEach(k => keys.delete(k)); updateTerrain(rover.x, rover.z, 0, true); return { x: rover.x, z: rover.z, y: rover.y, vmax, airs: air, maxAir, ay: astro.y }; },
     };
   } catch (e) {
