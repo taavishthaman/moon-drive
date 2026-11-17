@@ -183,7 +183,7 @@ const PLANETS = {
   },
   mars: {
     id: 'mars', name: 'Mars', R: 3389500, G: 3.711, gText: '3.71 m/s² · 0.38 g', dir: 'mars/', exag: 3, root: 1048576, atmo: true,
-    craterScale: 0.22, rockBase: 0.2, sunI: 2.6, albedo: 1.25, sites: MARS_SITES,
+    craterScale: 0.22, rockBase: 0.3, sunI: 2.6, albedo: 1.25, sites: MARS_SITES,
     src: ['MOLA 128 px/° patch (~460 m)', 'MOLA 16 px/° (~3.7 km)', 'MOLA 4 px/° (loading finer…)'],
     hd: 'High-detail terrain (~460 m MOLA data)', any: 'Anywhere else (~3.7 km data)',
     credit: 'Terrain: NASA/GSFC MGS MOLA · Colour: Viking MDIM (USGS) · Models: NASA 3D Resources',
@@ -380,13 +380,39 @@ function craterField(X, Y, Z, step = 0) {
   BRIGHT *= quiet;
   return h * quiet;
 }
+// Mars dune fields: dark basalt sand piled into ridges across the wind (gentle windward side, steep lee face)
+function sstep(x, a, b) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+let DUNE = 0;   // side output: how much of this spot is dune field (0..1)
+const WU = [0.62, 0.31, 0.72], WV = [-0.69, 0.52, 0.5];
+function duneField(X, Y, Z, step) {
+  DUNE = 0;
+  if (!PL.atmo) return 0;
+  const m = vnoise(X / 9000, Y / 9000, Z / 9000, 71) * 0.6 + vnoise(X / 2600, Y / 2600, Z / 2600, 73) * 0.4;
+  const mask = sstep(m, 0.22, 0.48);
+  if (mask <= 0) return 0;
+  DUNE = mask;
+  if (step > 45) return 0;
+  const a = vnoise(X / 22000, Y / 22000, Z / 22000, 79) * 1.4, ca = Math.cos(a), sa = Math.sin(a);
+  const wx = WU[0] * ca + WV[0] * sa, wy = WU[1] * ca + WV[1] * sa, wz = WU[2] * ca + WV[2] * sa;
+  const along = X * wx + Y * wy + Z * wz;
+  const warp = vnoise(X / 400, Y / 400, Z / 400, 83) * 0.9;
+  let h = 0;
+  const prof = (u) => { const f = u - Math.floor(u); const t = f < 0.75 ? f / 0.75 : (1 - f) / 0.25; return t * t * (3 - 2 * t); };
+  const amp = 7 * (0.6 + 0.4 * vnoise(X / 1500, Y / 1500, Z / 1500, 89));
+  h += prof(along / 140 + warp) * amp;
+  if (step < 14) h += prof(along / 38 + warp * 1.7 + 0.37) * 1.3;
+  return (h - amp * 0.45) * mask;
+}
 function detailAt(px, py, pz, step = 0) {
   const X = px * R, Y = py * R, Z = pz * R;
+  const dune = duneField(X, Y, Z, step), duneMask = DUNE;
   let n = vnoise(X / 1500, Y / 1500, Z / 1500, 3) * 40 + vnoise(X / 420, Y / 420, Z / 420, 5) * 10;
   if (step < 73) n += vnoise(X / 110, Y / 110, Z / 110, 7) * 2.4;
   if (step < 19) n += vnoise(X / 28, Y / 28, Z / 28, 9) * 0.55;
   if (step < 4.7) n += vnoise(X / 7, Y / 7, Z / 7, 13) * 0.12;
-  return n + craterField(X, Y, Z, step);
+  const cr = craterField(X, Y, Z, step);
+  DUNE = duneMask;
+  return n + dune + cr * (1 - duneMask * 0.85);
 }
 
 let SRC = '';  // side output: which data set dominated
@@ -575,6 +601,7 @@ function loadTex(url, srgb) {
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t;
 }
 const detailN = loadTex('detail_n.png'), detailA = loadTex('detail_a.png');
+let marsDetN = null, marsDetA = null;   // loaded the first time we go to Mars
 
 // Cascaded shadow maps: crisp shadows near the rover, crater-rim shadows kilometres away
 const sunDir = new THREE.Vector3();
@@ -696,7 +723,7 @@ function glowTexture() {
 }
 
 // ---- terrain material: LROC colour + multi-scale triplanar regolith detail + curvature of the Moon
-const curvUniforms = { uCamXZ: { value: new THREE.Vector2() }, uInv2R: { value: 1 / (2 * R) }, tDetN: { value: detailN }, tDetA: { value: detailA } };
+const curvUniforms = { uCamXZ: { value: new THREE.Vector2() }, uInv2R: { value: 1 / (2 * R) }, tDetN: { value: detailN }, tDetA: { value: detailA }, uLayers: { value: 0 } };
 const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 csm.setupMaterial(terrainMat);
 const csmHook = terrainMat.onBeforeCompile;
@@ -710,7 +737,7 @@ terrainMat.onBeforeCompile = (sh, r) => {
     wpos.y -= dot( dxz, dxz ) * uInv2R;
     vec4 mvPosition = viewMatrix * wpos;
     gl_Position = projectionMatrix * mvPosition;`);
-  sh.fragmentShader = `uniform sampler2D tDetN; uniform sampler2D tDetA; varying vec3 vWP; varying vec3 vWN;
+  sh.fragmentShader = `uniform sampler2D tDetN; uniform sampler2D tDetA; uniform float uLayers; varying vec3 vWP; varying vec3 vWN;
     vec3 triBlend(vec3 n){ vec3 b = pow(abs(n), vec3(6.0)); return b / (b.x + b.y + b.z); }
     float triA(vec3 p, vec3 bw){
       if (bw.y > 0.985) return texture2D(tDetA, p.xz).r;
@@ -737,6 +764,18 @@ terrainMat.onBeforeCompile = (sh, r) => {
       if (wA > 0.0) alb += (triA(vWP / 2.5, bw) - 0.5) * 0.9 * wA;
       if (wB > 0.0) alb += (triA(vWP / 21.0, bw) - 0.5) * 1.1 * wB;
       if (wC > 0.0) alb += (triA(vWP / 170.0, bw) - 0.5) * 0.9 * wC;
+      // Mars: horizontal rock layers show on steep slopes (canyon walls, crater walls, Mount Sharp)
+      if (uLayers > 0.5) {
+        float steep = smoothstep(0.82, 0.5, nW0.y) * (1.0 - smoothstep(2500.0, 9000.0, camD));
+        if (steep > 0.0) {
+          float y = vWP.y + sin(vWP.x * 0.004) * 6.0 + sin(vWP.z * 0.0031) * 6.0;
+          float b1 = sin(y * 0.55 + sin(y * 0.071) * 3.0) * 0.5 + 0.5;
+          float b2 = sin(y * 1.9 + 1.3) * 0.5 + 0.5;
+          float b3 = smoothstep(0.55, 0.95, sin(y * 0.13 + 0.7) * 0.5 + 0.5);
+          float band = 0.8 + b1 * 0.26 + b2 * 0.08 * (1.0 - smoothstep(300.0, 900.0, camD)) + b3 * 0.12;
+          alb *= mix(1.0, band, steep);
+        }
+      }
       diffuseColor.rgb *= alb;`)
     .replace('#include <normal_fragment_maps>', `
       {
@@ -773,7 +812,7 @@ function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
       const k = (b - 1) * n1 + (a - 1);
       colourAt(UX, UY, UZ, rgb);
       const br = 1 + BRIGHT;
-      const ag = PL.albedo; col[k * 3] = rgb[0] * ag * br; col[k * 3 + 1] = rgb[1] * ag * br; col[k * 3 + 2] = rgb[2] * ag * br;
+      const ag = PL.albedo, dd = 1 - DUNE * 0.28; col[k * 3] = rgb[0] * ag * br * dd; col[k * 3 + 1] = rgb[1] * ag * br * dd * 1.04; col[k * 3 + 2] = rgb[2] * ag * br * dd * 1.12;
     }
   }
   // stitch edges onto coarser neighbours: interpolate between their vertices so there are no cracks
@@ -1015,6 +1054,29 @@ function rockGeometry(seed, detail = 3) {
 const rockGeos = [1, 2, 3, 4, 5, 6].map(rockGeometry);
 const ROCK_CAP = 2500;
 const rockGeosFar = [1, 2, 3, 4, 5, 6].map(sd => rockGeometry(sd, 1));
+// Mars boulders: fewer faces, more chipped, flat-shaded so they read as sharp-edged blocks
+function marsRockGeometry(seed, detail) {
+  const g = rockGeometry(seed + 40, detail), p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    for (let k = 0; k < 7; k++) {
+      const nx = hash3(seed, k, 11, 5) - 0.5, ny = hash3(seed, k, 12, 5) - 0.25, nz = hash3(seed, k, 13, 5) - 0.5;
+      const L = Math.hypot(nx, ny, nz), d = (v.x * nx + v.y * ny + v.z * nz) / L, cut = 0.45 + hash3(seed, k, 14, 5) * 0.3;
+      if (d > cut) { const e = d - cut; v.x -= nx / L * e; v.y -= ny / L * e; v.z -= nz / L * e; }
+    }
+    p.setXYZ(i, v.x * 1.05, v.y * 1.25, v.z * 1.05);
+  }
+  g.computeVertexNormals(); return g;
+}
+let marsRockGeos = null, marsRockGeosFar = null;
+function setRockStyle(mars) {
+  if (mars && !marsRockGeos) { marsRockGeos = [1, 2, 3, 4, 5, 6].map(sd => marsRockGeometry(sd, 1)); marsRockGeosFar = [1, 2, 3, 4, 5, 6].map(sd => marsRockGeometry(sd, 0)); }
+  rockMeshes.forEach((m, i) => m.geometry = mars ? marsRockGeos[i] : rockGeos[i]);
+  rockMeshesFar.forEach((m, i) => m.geometry = mars ? marsRockGeosFar[i] : rockGeosFar[i]);
+  rockMat.flatShading = mars; rockMat.color.set(mars ? 0x7c6a5c : 0x9a948c);
+  rockMat.map = mars ? marsDetA : detailA; rockMat.normalMap = mars ? marsDetN : detailN;
+  rockMat.needsUpdate = true;
+}
 const rockMeshes = rockGeos.map(g => { const m = new THREE.InstancedMesh(g, rockMat, ROCK_CAP); m.castShadow = m.receiveShadow = true; m.count = 0; surfScene.add(m); return m; });
 const rockMeshesFar = rockGeosFar.map(g => { const m = new THREE.InstancedMesh(g, rockMat, ROCK_CAP); m.castShadow = false; m.receiveShadow = true; m.count = 0; surfScene.add(m); return m; });
 const rockTiles = new Map();
@@ -1025,7 +1087,7 @@ function genRockTile(ti, tj) {
     const h1 = hash3(ti, tj, k, 101 + rockSeed), h2 = hash3(ti, tj, k, 202 + rockSeed), h3 = hash3(ti, tj, k, 303 + rockSeed), h4 = hash3(ti, tj, k, 404 + rockSeed);
     const x = x0 + h1 * ROCK_TILE, z = z0 + h2 * ROCK_TILE;
     const y = heightLocal(x, z);
-    const dens = PL.rockBase + Math.min(1, BRIGHT * 2.2) * 0.6;
+    const dens = (PL.rockBase + Math.min(1, BRIGHT * 2.2) * 0.6) * (1 - DUNE);
     if (h3 > dens) continue;
     const r = Math.min(2.6, 0.09 / Math.pow(h4 + 0.012, 0.62));
     if (r < 0.12) continue;
@@ -1232,7 +1294,7 @@ function updateSun() {
   earthMat.uniforms.sunW.value.copy(sunDir);
   applyAtmosphere();
 }
-const sstep = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
 function applyAtmosphere() {
   const el = sunDir.y;   // sine of the sun's elevation
   if (PL.atmo) {
@@ -1575,6 +1637,10 @@ async function loadPlanet(id, first = false) {
     const colTex = new THREE.CanvasTexture(col.cv); colTex.colorSpace = THREE.SRGBColorSpace; colTex.anisotropy = 8;
     buildGlobe(colTex);
     if (P.atmo) makeEnv([0.55, 0.40, 0.28], [0.42, 0.28, 0.18]); else makeEnv([0, 0, 0], [0.32, 0.30, 0.28]);
+    if (P.atmo && !marsDetN) { marsDetN = loadTex('mars/detail_n.png'); marsDetA = loadTex('mars/detail_a.png'); }
+    curvUniforms.tDetN.value = P.atmo ? marsDetN : detailN; curvUniforms.tDetA.value = P.atmo ? marsDetA : detailA;
+    curvUniforms.uLayers.value = P.atmo ? 1 : 0;
+    setRockStyle(P.atmo);
     applyAtmosphere();
     buildSiteList();
     document.querySelectorAll('#planetTabs button').forEach(b => b.classList.toggle('on', b.dataset.p === id));
