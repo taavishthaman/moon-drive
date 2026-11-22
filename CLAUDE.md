@@ -13,7 +13,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 ```
 
 - Headless Chrome uses software rendering (~1 fps). Judge visuals from screenshots, and judge physics with `window.__moon.sim(seconds, ['KeyW', ...])`, which steps the simulation at a fixed 1/120 s.
-- Debug hooks on `window.__moon`: `land(site)`, `loadPlanet(id)`, `sim(sec, keys)`, `state()`, `SITES`, `planet`, `rover`, `astro`, `camState`, `toggleExit()`, `cycleCamera()`.
+- Debug hooks on `window.__moon`: `land(site)`, `loadPlanet(id)`, `sim(sec, keys)`, `state()`, `SITES`, `planet`, `rover`, `astro`, `camState`, `toggleExit()`, `cycleCamera()`, `toggleOverlay()`, `globe`, `gCam`.
 - Check after every change: no page errors, a Moon landing (`a15`) and a Mars landing (`olympus`) both render, and driving with `sim` works.
 
 ## Files
@@ -38,8 +38,10 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
   - `color4k.jpg`: 4096×2048.
 - **Gnomonic patches** around sites (`patch_<id>.png`, 1024², spacing `site.sp`, default 240 m) and colour patches (`cpatch_<id>.jpg`, 512², spacing `site.csp`, default 480 m):
   - Centred exactly on the site's lat/lon. Geometry is in `tools/heightpng.py`, matching `makeFrame()` and `baseAt()`.
-  - `ensurePatchesNear()` loads any site patch within range of the landing point.
-  - `baseAt()` blends a patch in over its outer 40 px.
+  - `ensurePatchesNear()` loads any site patch within range of the landing point, and the polar cap patches (`PL.capPatches`, ids `ncap`/`scap`, centred on ±90°) poleward of `CAP_LAT` (78°).
+  - `baseAt()` blends a patch in over its outer 40 px. Site patches win over cap patches; cap colour patches are drawn first so site colour paints over them.
+  - A site with `patchId` reuses another site's patch files (the Olympus escarpment uses `patch_olympus`).
+  - Caps come from `tools/polar_caps.py`, which box-filters source rows in longitude before resampling. Mars has no MOLA tracks poleward of ~87° (`fillLat`); the HUD labels that zone as interpolated.
 
 ## Architecture (index.html, top to bottom)
 
@@ -47,7 +49,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 - **Height function:**
   - `surfaceAt(unit vector, step) = baseAt()` (measured data: patch, else 16 px/° tile, else 4 px/°) `+ detailAt()` (generated).
   - `detailAt()` adds value noise, `craterField()` (3D cell hashing; each crater must stay inside its own cell, or it gets sliced along cell planes), and on Mars `duneField()`.
-  - Side outputs: `SRC` (data source label), `BRIGHT` (fresh crater), `DUNE` (dune coverage).
+  - Side outputs: `SRC` (data source label), `SRCI` (numeric: 1 patch, 0.5 tile, 0 fallback), `BRIGHT` (fresh crater), `DUNE` (dune coverage), `CRAT` (inside a generated crater).
   - The `step` argument drops features smaller than the mesh spacing (LOD-aware).
 - **Local frame:** a tangent plane at `FR` with x east, y up, z **south**. Heading: forward = `(sin yaw, cos yaw)`, so `yaw = π` faces north. `localToUnit()` / `unitToLocal()` convert. `recentre()` moves the frame onto the rover beyond 16 km and remaps rover, astronaut, tracks and lander.
 - **Terrain mesh:** quadtree of 32×32 chunks (`selectLeaves`, `updateTerrain`, `buildChunk`).
@@ -71,7 +73,8 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
   - Headlight spotlights.
   - EffectComposer: MSAA HDR, bloom, grade, output.
   - Dynamic resolution (`adaptPerf`); High/Low quality (`setQuality`, key G).
-  - Mars: sky dome shader plus `FogExp2` haze (`applyAtmosphere`).
+  - Mars: sky dome shader plus `FogExp2` haze (`applyAtmosphere`). `updateAir()` scales both by the mean air density between camera and rover (11.1 km scale height, capped at the low-site level).
+  - Data overlay (key O): `buildChunk()` bakes an `aOvl` attribute (source, generated slope, dune, crater); toggling only flips `uOverlay` and the rock colour.
 
 ## Conventions and gotchas
 

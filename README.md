@@ -43,10 +43,11 @@ The page loads three.js from cdn.jsdelivr.net, so viewers need an internet conne
 | `h16_*.png` | Global elevation, 16 px/degree (~1.9 km), 8 tiles loaded on demand |
 | `patch_*.png` | 64 px/degree (~240 m) close-up patches around the eight featured sites |
 | `cpatch_*.jpg` | Sharper colour patches from the 8K LROC mosaic (Ina, Reiner Gamma) |
+| `patch_ncap.png`, `patch_scap.png`, `cpatch_*cap.jpg` | Polar cap patches (height ~400 m, colour ~1.2 km) for both poles, loaded poleward of 78° |
 | `color4k.jpg` | LROC colour map |
 | `detail_n.png`, `detail_a.png` | Generated tileable regolith detail (normal and albedo maps) |
 | `earth.jpg` | NASA Blue Marble Earth texture (NASA SVS) |
-| `mars/` | The same set of maps for Mars: MOLA elevation (globe map, 16 px/degree tiles, 128 px/degree patches for Olympus Mons, Valles Marineris, Jezero and Gale) and Viking colour |
+| `mars/` | The same set of maps for Mars: MOLA elevation (globe map, 16 px/degree tiles, 128 px/degree patches for Olympus Mons, Valles Marineris, Jezero and Gale, polar caps) and Viking colour |
 | `Caddyfile` | Server config for Railway/Railpack (allows the 3D model decoder) |
 | `model_*.js` | Rover, lunar module and astronaut models, stored as base64 inside JS files |
 

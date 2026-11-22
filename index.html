@@ -200,14 +200,19 @@ const PLANETS = {
   moon: {
     id: 'moon', name: 'Moon', R: 1737400, G: 1.62, gText: '1.62 m/s² · ⅙ g', dir: '', exag: 6, root: 131072, atmo: false,
     craterScale: 1, rockBase: 0.11, sunI: 3.6, albedo: 2.2, sites: MOON_SITES,
-    src: ['LOLA 64 px/° patch (~240 m)', 'LOLA 16 px/° (~1.9 km)', 'LOLA 4 px/° (loading finer…)'],
+    src: ['LOLA 64 px/° patch (~240 m)', 'LOLA 16 px/° (~1.9 km)', 'LOLA 4 px/° (loading finer…)'], capSrc: 'LOLA polar cap (~400 m)',
+    // data-only patches centred on the poles (tools/polar_caps.py), loaded when you're poleward of capLat
+    capPatches: [{ id: 'ncap', lat: 90, lon: 0, sp: 400, csp: 1200, colour: true }, { id: 'scap', lat: -90, lon: 0, sp: 400, csp: 1200, colour: true }],
     hd: 'High-detail terrain (~240 m data)', any: 'Anywhere else (~1.9 km data)',
     credit: 'Terrain: NASA/GSFC/ASU LRO LOLA &amp; LROC (CGI Moon Kit) · Models: NASA 3D Resources',
   },
   mars: {
     id: 'mars', name: 'Mars', R: 3389500, G: 3.711, gText: '3.71 m/s² · 0.38 g', dir: 'mars/', exag: 3, root: 1048576, atmo: true,
     craterScale: 0.22, rockBase: 0.3, sunI: 2.6, albedo: 1.25, sites: MARS_SITES,
-    src: ['MOLA 128 px/° patch (~460 m)', 'MOLA 16 px/° (~3.7 km)', 'MOLA 4 px/° (loading finer…)'],
+    src: ['MOLA 128 px/° patch (~460 m)', 'MOLA 16 px/° (~3.7 km)', 'MOLA 4 px/° (loading finer…)'], capSrc: 'MOLA polar cap (~640 m)',
+    capPatches: [{ id: 'ncap', lat: 90, lon: 0, sp: 640, csp: 1400, colour: true }, { id: 'scap', lat: -90, lon: 0, sp: 640, csp: 1400, colour: true }],
+    fillLat: 86.5,   // MOLA has no tracks poleward of ~87°: the source is interpolated there (see tools/polar_caps.py)
+    fillSrc: 'MOLA polar gap (interpolated)',
     hd: 'High-detail terrain (~460 m MOLA data)', any: 'Anywhere else (~3.7 km data)',
     credit: 'Terrain: NASA/GSFC MGS MOLA · Colour: Viking MDIM (USGS) · Models: NASA 3D Resources',
   },
@@ -442,7 +447,7 @@ function detailAt(px, py, pz, step = 0) {
 let SRC = '';  // side output: which data set dominated
 let SRCI = 0;  // side output, numeric: 1 = high-res patch, 0.5 = 16 px/° tile, 0 = 4 px/° fallback (blended)
 function baseAt(px, py, pz) {
-  let hp = 0, w = 0;
+  let hp = 0, w = 0, hc = 0, wc = 0;   // best site patch, best polar cap patch (site patches win where both exist)
   for (const p of PATCHES) {
     const d = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
     if (d < p.cosLim) continue;
@@ -452,14 +457,21 @@ function baseAt(px, py, pz) {
     const edge = Math.min(fx - 1, fy - 1, p.n - 2 - fx, p.n - 2 - fy);
     if (edge <= 0) continue;
     const ww = edge >= 40 ? 1 : (edge / 40) * (edge / 40) * (3 - 2 * edge / 40);
-    if (ww > w) { w = ww; hp = bicubicArr(p.data, p.n, fx, fy); }
+    if (p.cap) { if (ww > wc) { wc = ww; hc = bicubicArr(p.data, p.n, fx, fy); } }
+    else if (ww > w) { w = ww; hp = bicubicArr(p.data, p.n, fx, fy); }
   }
   if (w >= 1) { SRC = PL.src[0]; SRCI = 1; return hp; }
-  const lat = unitLat(py), lon = unitLon(px, pz);
-  const t = T16[tileIndex(lat, lon)];
-  const hb = sample16(lat, lon);
-  SRC = w > 0.5 ? PL.src[0] : t ? PL.src[1] : PL.src[2];
-  SRCI = w + (1 - w) * (t ? 0.5 : 0);
+  let hb = hc, t = null;
+  if (wc < 1) {
+    const lat = unitLat(py), lon = unitLon(px, pz);
+    t = T16[tileIndex(lat, lon)];
+    const hg = sample16(lat, lon);
+    hb = hg + (hc - hg) * wc;
+  }
+  // Mars: no MOLA tracks right at the poles, so count the cap there as coarse (interpolated) data
+  const gap = PL.fillLat && wc > 0 && Math.abs(py) > Math.sin((PL.fillLat + 0.5) * D2R);
+  SRC = w > 0.5 ? PL.src[0] : wc > 0.5 ? (gap ? PL.fillSrc : PL.capSrc) : t ? PL.src[1] : PL.src[2];
+  SRCI = w + (1 - w) * (wc * (gap ? 0.5 : 1) + (1 - wc) * (t ? 0.5 : 0));
   return hb + (hp - hb) * w;
 }
 function surfaceAt(px, py, pz, step = 0) { return baseAt(px, py, pz) + detailAt(px, py, pz, step); }
@@ -545,11 +557,31 @@ function buildGlobe(colTex) {
   globeDots.clear();
   const W = 720, H = 360;
   const pos = new Float32Array((W + 1) * (H + 1) * 3), uv = new Float32Array((W + 1) * (H + 1) * 2);
+  // near the poles, box-average each height4 row across ~two globe grid steps (1°) of arc, so rings are as smooth as
+  // meridians (mesh rows are 0.5° apart). Single wedge-shaped pixels there make a starburst (cf. tools/polar_caps.py)
+  const GW = 1440, GD = Float32Array.from(G4.data), colw = 2 * Math.PI / GW, arc = 1.0 * D2R;
+  for (let iy = 0; iy < 720; iy++) {
+    const lat = 90 - (iy + 0.5) / 4, al = Math.abs(lat);
+    if (al < 70) continue;
+    let k = Math.round(arc / (colw * Math.cos(lat * D2R)));
+    if (PL.fillLat) k = Math.max(k, Math.round(sstep(al, PL.fillLat, PL.fillLat + 1) * 30 / 360 * GW));
+    k = Math.min(GW, k | 1);
+    if (k <= 1) continue;
+    const row = G4.data.subarray(iy * GW, (iy + 1) * GW), h = k >> 1;
+    let sum = 0;
+    for (let j = -h; j <= h; j++) sum += row[(j + GW) % GW];
+    for (let i = 0; i < GW; i++) { GD[iy * GW + i] = sum / k; sum += row[(i + h + 1) % GW] - row[(i - h + GW) % GW]; }
+  }
+  const globeH = (lat, lon) => {
+    const fx = (lon + 180) * 4 - 0.5, fy = (90 - lat) * 4 - 0.5, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+    const g = (x, y) => GD[(y < 0 ? 0 : y > 719 ? 719 : y) * GW + ((x % GW) + GW) % GW];
+    return (g(ix, iy) * (1 - tx) + g(ix + 1, iy) * tx) * (1 - ty) + (g(ix, iy + 1) * (1 - tx) + g(ix + 1, iy + 1) * tx) * ty;
+  };
   for (let j = 0, k = 0; j <= H; j++) {
     const lat = 90 - j * 180 / H, la = lat * D2R;
     for (let i = 0; i <= W; i++, k++) {
       const lon = -180 + i * 360 / W, lo = lon * D2R;
-      const r = 1 + g4bilinear(Math.max(-89.9, Math.min(89.9, lat)), lon) / R * PL.exag;
+      const r = 1 + globeH(Math.max(-89.9, Math.min(89.9, lat)), lon) / R * PL.exag;
       pos[k * 3] = r * Math.cos(la) * Math.cos(lo); pos[k * 3 + 1] = r * Math.sin(la); pos[k * 3 + 2] = -r * Math.cos(la) * Math.sin(lo);
       uv[k * 2] = i / W; uv[k * 2 + 1] = 1 - j / H;
     }
@@ -564,7 +596,17 @@ function buildGlobe(colTex) {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeVertexNormals();
-  globe = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: colTex, roughness: 1, metalness: 0 }));
+  const gm = new THREE.MeshStandardMaterial({ map: colTex, roughness: 1, metalness: 0 });
+  // texture LOD from the true footprint: the longitude derivative shrinks by cos(lat). Without this the GPU picks
+  // a coarse mip near the poles and blurs radially (starburst); the map's polar rows are pre-filtered instead
+  gm.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `
+      vec2 gdx = dFdx(vMapUv), gdy = dFdy(vMapUv);
+      float gcl = max(cos((vMapUv.y - 0.5) * 3.14159265), 0.01);
+      gdx.x *= gcl; gdy.x *= gcl;
+      diffuseColor *= textureGrad(map, vMapUv, gdx, gdy);`);
+  };
+  globe = new THREE.Mesh(g, gm);
   globeScene.add(globe);
   for (const st of SITES) {
     const la = st.lat * D2R, lo = st.lon * D2R;
@@ -1408,19 +1450,24 @@ function showUI(m) {
   $('touch').classList.toggle('on', m === 'surface');
   $('hover').classList.add('hidden');
 }
+const CAP_LAT = 78;   // polar cap patches load poleward of this
 async function ensurePatchesNear(lat, lon) {
   const f = makeFrame(lat, lon);
   const jobs = [];
-  for (const s of SITES) {
+  const caps = (PL.capPatches || []).filter(c => Math.abs(lat) >= CAP_LAT && c.lat * lat > 0);
+  for (const s of [...SITES, ...caps]) {
     if (s.patchId) continue;   // shares the patch of the site it names, which is loaded by its own entry
     if (PATCHES.some(p => p.id === s.id) || s.loading) continue;
+    const cap = caps.includes(s);
     const sf = makeFrame(s.lat, s.lon);
     const d = f.C[0] * sf.C[0] + f.C[1] * sf.C[1] + f.C[2] * sf.C[2];
-    if (d < Math.cos(((s.sp || 240) * 1024 * 0.7 + 50000) / R)) continue;
+    if (!cap && d < Math.cos(((s.sp || 240) * 1024 * 0.7 + 50000) / R)) continue;
     s.loading = true;
     const pid = PL.id;
-    jobs.push(loadHeight(`${PL.dir}patch_${s.id}.png`).then(h => { if (PL.id !== pid) return; const sp = s.sp || 240; PATCHES.push({ id: s.id, F: sf, n: h.w, sp, data: h.data, cosLim: Math.cos(h.w * sp * 0.75 / R) }); terrainVersion++; }).catch(console.error));
-    if (s.colour) jobs.push(loadBitmap(`${PL.dir}cpatch_${s.id}.jpg`).then(b => { if (PL.id !== pid) return; const sp = s.csp || 480; CPATCHES.push({ id: s.id, F: sf, n: b.w, sp, px: b.px, cosLim: Math.cos(b.w * sp * 0.75 / R) }); terrainVersion++; }).catch(console.error));
+    // new height data: rebuild chunks (terrainVersion) and drop cached physics heights (PH)
+    jobs.push(loadHeight(`${PL.dir}patch_${s.id}.png`).then(h => { if (PL.id !== pid) return; const sp = s.sp || 240; PATCHES.push({ id: s.id, cap, F: sf, n: h.w, sp, data: h.data, cosLim: Math.cos(h.w * sp * 0.75 / R) }); terrainVersion++; PH.clear(); }).catch(console.error));
+    // colour patches blend in list order, so caps go first and site patches paint over them
+    if (s.colour) jobs.push(loadBitmap(`${PL.dir}cpatch_${s.id}.jpg`).then(b => { if (PL.id !== pid) return; const sp = s.csp || 480; const cp = { id: s.id, F: sf, n: b.w, sp, px: b.px, cosLim: Math.cos(b.w * sp * 0.75 / R) }; if (cap) CPATCHES.unshift(cp); else CPATCHES.push(cp); terrainVersion++; }).catch(console.error));
   }
   return Promise.all(jobs);
 }
@@ -1717,8 +1764,8 @@ async function loadPlanet(id, first = false) {
     curvUniforms.uInv2R.value = 1 / (2 * R);
     computeQuiet(); resetPlanetData();
     G4 = h4; COL = col;
-    for (const st of SITES) st.loading = false;
-    const colTex = new THREE.CanvasTexture(col.cv); colTex.colorSpace = THREE.SRGBColorSpace; colTex.anisotropy = 8;
+    for (const st of [...SITES, ...(P.capPatches || [])]) st.loading = false;
+    const colTex = new THREE.CanvasTexture(polarFilteredCanvas(col)); colTex.colorSpace = THREE.SRGBColorSpace; colTex.anisotropy = 8;
     buildGlobe(colTex);
     if (P.atmo) makeEnv([0.55, 0.40, 0.28], [0.42, 0.28, 0.18]); else makeEnv([0, 0, 0], [0.32, 0.30, 0.28]);
     if (P.atmo && !marsDetN) { marsDetN = loadTex('mars/detail_n.png'); marsDetA = loadTex('mars/detail_a.png'); }
@@ -1739,6 +1786,26 @@ async function loadPlanet(id, first = false) {
     if (!first) { mode = 'globe'; controls.enabled = true; showUI('globe'); await fade(false); }
   } catch (e) { console.error(e); toast('Could not load ' + P.name); if (!first) { mode = 'globe'; controls.enabled = true; await fade(false); } }
   planetLoading = false;
+}
+// copy of the colour map for the orbit globe, with rows near the poles box-averaged in longitude over about
+// two texels of latitude-direction arc, so the globe can sample it with a cos(lat)-scaled LOD (see buildGlobe)
+function polarFilteredCanvas(col) {
+  const { w: W, h: H, px } = col, out = new Uint8ClampedArray(px);
+  for (let y = 0; y < H; y++) {
+    const lat = 90 - (y + 0.5) / H * 180;
+    if (Math.abs(lat) < 60) continue;
+    const k = Math.min(W, Math.round(2 / Math.max(Math.cos(lat * D2R), 1e-4)) | 1), h = k >> 1;
+    if (k <= 1) continue;
+    for (let c = 0; c < 3; c++) {
+      const at = x => px[(y * W + ((x % W) + W) % W) * 4 + c];
+      let sum = 0;
+      for (let j = -h; j <= h; j++) sum += at(j);
+      for (let x = 0; x < W; x++) { out[(y * W + x) * 4 + c] = sum / k; sum += at(x + h + 1) - at(x - h); }
+    }
+  }
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  cv.getContext('2d').putImageData(new ImageData(out, W, H), 0, 0);
+  return cv;
 }
 function buildSiteList() {
   const list = $('sites');
@@ -1773,7 +1840,7 @@ document.querySelectorAll('#planetTabs button').forEach(b => b.onclick = () => {
     astroObj.add(astroModel); astroObj.visible = false;
     mode = 'globe'; controls.enabled = true; showUI('globe');
     $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
-    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, toggleOverlay, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
+    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, toggleOverlay, get globe() { return globe; }, gCam, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
       sim: (sec, ks) => { ks.forEach(k => keys.add(k)); let air = 0, maxAir = 0, vmax = 0, wasAir = false; for (let i = 0; i < sec * 120; i++) { stepRover(1 / 120); if (astro.active) stepAstro(1 / 120, camState.smoothYaw); vmax = Math.max(vmax, rover.speed); if (rover.air && !wasAir) air++; wasAir = rover.air; if (rover.air) maxAir = Math.max(maxAir, rover.y - hPhys(rover.x, rover.z)); if (Math.hypot(rover.x, rover.z) > 16000) recentre(); } ks.forEach(k => keys.delete(k)); updateTerrain(rover.x, rover.z, 0, true); return { x: rover.x, z: rover.z, y: rover.y, vmax, airs: air, maxAir, ay: astro.y }; },
     };
   } catch (e) {
