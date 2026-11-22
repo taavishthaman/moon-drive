@@ -34,6 +34,8 @@
 		hide .git
 		hide .env*
 		hide Caddyfile
+		# repo-only files
+		hide tools CLAUDE.md TASKS.md .gitignore dl
 	}
 
 	encode {
