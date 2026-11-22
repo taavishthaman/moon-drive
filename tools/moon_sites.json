@@ -1,0 +1,52 @@
+[
+ {
+  "id": "a11",
+  "name": "Apollo 11 \u00b7 Tranquility Base",
+  "lat": 0.67408,
+  "lon": 23.47297
+ },
+ {
+  "id": "a15",
+  "name": "Apollo 15 \u00b7 Hadley Rille",
+  "lat": 26.13224,
+  "lon": 3.634
+ },
+ {
+  "id": "a17",
+  "name": "Apollo 17 \u00b7 Taurus-Littrow",
+  "lat": 20.1908,
+  "lon": 30.77168
+ },
+ {
+  "id": "tycho",
+  "name": "Tycho crater",
+  "lat": -43.4,
+  "lon": -11.3
+ },
+ {
+  "id": "copernicus",
+  "name": "Copernicus crater",
+  "lat": 9.7,
+  "lon": -20.1
+ },
+ {
+  "id": "spole",
+  "name": "South Pole \u00b7 Shackleton rim",
+  "lat": -89.97,
+  "lon": 0.0
+ },
+ {
+  "id": "ina",
+  "name": "Ina",
+  "lat": 18.65,
+  "lon": 5.3,
+  "colour": true
+ },
+ {
+  "id": "reiner",
+  "name": "Reiner Gamma",
+  "lat": 7.4,
+  "lon": -59.0,
+  "colour": true
+ }
+]

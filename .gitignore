@@ -1,0 +1,5 @@
+# raw NASA/USGS downloads used by tools/*.py (multi-GB, never commit)
+dl/
+node_modules/
+tools/test/node_modules/
+__pycache__/
