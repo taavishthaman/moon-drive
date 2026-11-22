@@ -190,6 +190,8 @@ const MOON_SITES = [
 ];
 const MARS_SITES = [
   { id: 'olympus', name: 'Olympus Mons · summit caldera rim', lat: 18.40, lon: -133.90, sp: 700, csp: 1400, colour: true, spawn: [29050, 52150], yaw: -2.848, poi: [19950, 22050, 'Caldera floor'] },
+  // patchId: reuses another site's patch files (patch_olympus covers ±358 km); spot picked by tools/olympus_scarp.py
+  { id: 'scarp', patchId: 'olympus', name: 'Olympus Mons · basal escarpment', lat: 22.814, lon: -137.1034, spawn: [0, 0], yaw: 1.348, poi: [25175, 5712, 'Escarpment top'] },
   { id: 'valles', name: 'Valles Marineris · canyon rim', lat: -9.80, lon: -72.80, sp: 400, csp: 900, colour: true, spawn: [12434, -111234], yaw: 2.356 },
   { id: 'jezero', name: 'Jezero crater · Perseverance landing', lat: 18.4447, lon: 77.4508, sp: 300, csp: 900, colour: true, spawn: [0, 0], yaw: -2.506, poi: [-2850, -3863, 'Delta front'] },
   { id: 'gale', name: 'Gale crater · Curiosity landing', lat: -4.80, lon: 137.60, sp: 300, csp: 900, colour: true, spawn: [-9335, -12452], yaw: 0.692, poi: [14732, 16567, 'Mount Sharp summit'] },
@@ -657,9 +659,9 @@ makeEnv([0, 0, 0], [0.32, 0.30, 0.28]);
 // Mars sky: butterscotch by day, blue glow around a setting sun; doubles as the colour of the distance haze
 const skyDome = new THREE.Mesh(new THREE.SphereGeometry(280000, 64, 32), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
-  uniforms: { sunD: { value: new THREE.Vector3(0, 1, 0) } },
+  uniforms: { sunD: { value: new THREE.Vector3(0, 1, 0) }, uDen: { value: 1 } },
   vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: `uniform vec3 sunD; varying vec3 vD;
+  fragmentShader: `uniform vec3 sunD; uniform float uDen; varying vec3 vD;
     void main(){
       vec3 d = normalize(vD); float h = max(d.y, 0.0), sd = max(dot(d, sunD), 0.0);
       float day = smoothstep(-0.05, 0.4, sunD.y);
@@ -668,6 +670,9 @@ const skyDome = new THREE.Mesh(new THREE.SphereGeometry(280000, 64, 32), new THR
       c += vec3(0.30, 0.48, 0.80) * pow(sd, 14.0) * (1.4 - day * 0.8);
       c += vec3(1.0, 0.85, 0.7) * pow(sd, 3.0) * 0.2 * day;
       if (d.y < 0.0) c = hor * mix(0.08, 1.0, day) * 0.9;
+      // thin air up high: the zenith dims toward black and loses its colour, the horizon keeps some glow
+      float lum = dot(c, vec3(0.3, 0.59, 0.11));
+      c = mix(vec3(lum), c, mix(0.3, 1.0, uDen)) * mix(uDen, 1.0, pow(1.0 - h, 4.0));
       gl_FragColor = vec4(c * 1.15, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
@@ -1304,7 +1309,7 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerup', () => { dragPt = null; });
 canvas.addEventListener('wheel', e => {
   if (mode !== 'surface') return;
-  camState.dist = Math.max(3, Math.min(20000, camState.dist * Math.pow(1.0015, e.deltaY)));
+  camState.dist = Math.max(3, Math.min(PL.atmo ? 80000 : 20000, camState.dist * Math.pow(1.0015, e.deltaY)));   // Mars: high enough to see Olympus Mons' shape
 }, { passive: true });
 
 function cycleCamera() { camState.mode = (camState.mode + 1) % 2; camState.yawOff = 0; camState.pitch = camState.mode === 1 ? 0 : 0.28; toast(camState.mode === 1 ? 'Mast camera' : 'Chase camera'); }
@@ -1357,6 +1362,19 @@ function updateSun() {
   applyAtmosphere();
 }
 
+// Mars air density along the view, relative to the low sites the haze was tuned for (scale height 11.1 km).
+// Mean of exp(-h/H) along the line from the camera down to the rover, capped at 1 so low sites look as before.
+const AIR_H = 11100, AIR_REF = -2000;
+let airK = 1;
+function airDensity(hCam, hFocus) {
+  const a = (hCam - AIR_REF) / AIR_H, b = (hFocus - AIR_REF) / AIR_H;
+  const k = Math.abs(a - b) < 1e-3 ? Math.exp(-a) : (Math.exp(-b) - Math.exp(-a)) / (a - b);
+  return Math.min(1, k);
+}
+function updateAir(hCam, hFocus) {
+  const k = airDensity(hCam, hFocus);
+  if (Math.abs(k - airK) > 0.004 * Math.max(airK, 0.05)) { airK = k; applyAtmosphere(); }
+}
 function applyAtmosphere() {
   const el = sunDir.y;   // sine of the sun's elevation
   if (PL.atmo) {
@@ -1365,8 +1383,9 @@ function applyAtmosphere() {
     hazeColour.setRGB(0.80, 0.58, 0.40).multiplyScalar(0.08 + 0.92 * day);
     if (!surfScene.fog) surfScene.fog = new THREE.FogExp2(0x000000, 1 / 45000);
     surfScene.fog.color.copy(hazeColour);
+    surfScene.fog.density = airK / 45000; skyDome.material.uniforms.uDen.value = airK;
     starFade.value = 1 - sstep(el, 0.0, 0.12);
-    fill.color.setRGB(0.95, 0.72, 0.52); fill.groundColor.setRGB(0.35, 0.22, 0.14); fill.intensity = 0.15 + 0.75 * day;
+    fill.color.setRGB(0.95, 0.72, 0.52); fill.groundColor.setRGB(0.35, 0.22, 0.14); fill.intensity = (0.15 + 0.75 * day) * (0.45 + 0.55 * airK);
     const low = 1 - sstep(el, 0.0, 0.35);
     csm.lights.forEach(l => { l.intensity = PL.sunI * (1 - 0.6 * low); l.color.setRGB(1, 0.94 - 0.14 * low, 0.86 - 0.22 * low); });
     sunDisc.scale.setScalar(20000); sunDisc.material.color.setRGB(4, 3.9, 3.7);
@@ -1393,6 +1412,7 @@ async function ensurePatchesNear(lat, lon) {
   const f = makeFrame(lat, lon);
   const jobs = [];
   for (const s of SITES) {
+    if (s.patchId) continue;   // shares the patch of the site it names, which is loaded by its own entry
     if (PATCHES.some(p => p.id === s.id) || s.loading) continue;
     const sf = makeFrame(s.lat, s.lon);
     const d = f.C[0] * sf.C[0] + f.C[1] * sf.C[1] + f.C[2] * sf.C[2];
@@ -1423,11 +1443,11 @@ async function land(s) {
   const lx = rover.x + Math.sin(rover.yaw + 2.3) * 32, lz = rover.z + Math.cos(rover.yaw + 2.3) * 32;
   localToUnit(lx, lz); lmUnit = [UX, UY, UZ];
   placeLM();
+  poi = null;   // in the site's frame, so convert before recentre() moves the frame
+  if (s.poi) { localToUnit(s.poi[0], s.poi[1]); poi = { u: [UX, UY, UZ], label: s.poi[2] }; }
   if (Math.hypot(rover.x, rover.z) > 8000) recentre();
   camState.smoothYaw = rover.yaw; camState.yawOff = 0; camState.pitch = 0.28; camState.dist = 11; camState.mode = 0;
   $('siteName').textContent = s.name;
-  poi = null;
-  if (s.poi) { localToUnit(s.poi[0], s.poi[1]); poi = { u: [UX, UY, UZ], label: s.poi[2] }; }
   document.querySelectorAll('.poiRow').forEach(el => el.style.display = poi ? '' : 'none');
   updateTerrain(rover.x, rover.z, 0, true);
   mode = 'surface'; showUI('surface'); perfState.t0 = 0;
@@ -1660,6 +1680,7 @@ function frame(now) {
   roverObj.position.set(rover.x, rover.y, rover.z); roverObj.quaternion.copy(rover.q);
   if (astro.active) { astroObj.position.set(astro.x, astro.y, astro.z); astroObj.rotation.set(0, astro.yaw, 0); }
   updateCamera(dt);
+  if (PL.atmo) updateAir(sCam.position.y, focus.y);
   curvUniforms.uCamXZ.value.set(sCam.position.x, sCam.position.z);
   sky.position.copy(sCam.position);
   sunDisc.position.copy(sunDir).multiplyScalar(250000);
