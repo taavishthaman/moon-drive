@@ -57,6 +57,13 @@
   #hudTR .btns button { flex: 1; padding: 6px 8px; font-size: 12.5px; }
   #hudTR label { display: block; color: var(--muted); margin-top: 8px; }
   #hudTR input[type=range] { width: 100%; accent-color: var(--accent); }
+  #hudTR .btns button.on { border-color: var(--accent); color: var(--accent); }
+  #legend { left: 16px; bottom: 16px; padding: 10px 12px; font-size: 12px; max-width: 250px; }
+  #legend h2 { font-size: 14px; margin-bottom: 2px; }
+  #legend .lgh { font-size: 10px; color: var(--accent); letter-spacing: .1em; text-transform: uppercase; margin-top: 7px; }
+  #legend .lg { display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--text); }
+  #legend .lg i { flex: none; width: 14px; height: 10px; border-radius: 2px; box-sizing: border-box; }
+  @media (pointer: coarse) { #legend { bottom: auto; top: 200px; } }
   #toast { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-family: "Barlow Condensed", sans-serif; font-size: 22px; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 2px 12px #000; pointer-events: none; opacity: 0; transition: opacity .4s; text-align: center; }
   #fade { position: fixed; inset: 0; background: #000; pointer-events: none; opacity: 0; transition: opacity .5s; z-index: 10; display: grid; place-items: center; }
   #fade div { font-family: "Barlow Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
@@ -116,6 +123,7 @@
   <div class="row"><span>Camera · look around</span><span><kbd>C</kbd> drag · scroll</span></div>
   <div class="row"><span>Headlights · graphics</span><span><kbd>L</kbd> <kbd>G</kbd></span></div>
   <div class="row"><span>Reset · orbit</span><span><kbd>R</kbd> <kbd>M</kbd></span></div>
+  <div class="row"><span>Measured vs generated</span><kbd>O</kbd></div>
   <div class="row"><span>Performance</span><span id="hFps">—</span></div>
   <label>Sun elevation <span id="vSunEl"></span><input type="range" id="sunEl" min="1" max="80" value="14"></label>
   <label>Sun direction <span id="vSunAz"></span><input type="range" id="sunAz" min="0" max="359" value="110"></label>
@@ -125,7 +133,20 @@
     <button id="bOrbit">Orbit</button>
     <button id="bLights">Lights off</button>
     <button id="bGfx">Graphics: High</button>
+    <button id="bOvl">Data overlay</button>
   </div>
+</div>
+<div id="legend" class="panel hidden">
+  <h2>Measured vs generated</h2>
+  <div class="lgh">Measured (NASA data)</div>
+  <div class="lg"><i style="background:#1fc738"></i><span id="lgPatch">High-res patch</span></div>
+  <div class="lg"><i style="background:#f2c714"></i><span id="lgTile">16 px/° grid</span></div>
+  <div class="lg"><i style="background:#d91a0f"></i><span id="lgLow">4 px/° fallback</span></div>
+  <div class="lgh">Generated</div>
+  <div class="lg"><i style="background:linear-gradient(90deg,#666,#eb1ad9)"></i><span>Slope added by generated noise &amp; craters (full at 11°)</span></div>
+  <div class="lg"><i style="background:transparent;border:2px solid #fff;border-radius:50%"></i><span>Generated crater</span></div>
+  <div class="lg"><i style="background:#1accf2"></i><span id="lgDune">Generated dune field</span></div>
+  <div class="lg"><i style="background:#ff2ad8;border-radius:50%"></i><span>Boulders (all generated)</span></div>
 </div>
 <div id="touch" class="on">
   <div class="pad">
@@ -346,8 +367,9 @@ const CRATER_LEVELS = [
   { cell: 22, rmax: 5.5, prob: 0.75, seed: 51 },
 ];
 let BRIGHT = 0;  // albedo boost from fresh craters, side output
+let CRAT = 0;    // side output: 1 inside a generated crater bowl (for the data overlay)
 function craterField(X, Y, Z, step = 0) {
-  let h = 0; BRIGHT = 0;
+  let h = 0; BRIGHT = 0; CRAT = 0;
   let quiet = 1;
   for (const q of QUIET) {
     const dx = X - q.x, dy = Y - q.y, dz = Z - q.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -372,12 +394,12 @@ function craterField(X, Y, Z, step = 0) {
       const t = Math.sqrt(d2) / r;
       const age = PL.atmo ? 0.35 + 0.65 * hash3(ix, iy, iz, seed + 5) : hash3(ix, iy, iz, seed + 5);   // 0 fresh ... 1 eroded (Mars: wind and dust soften everything)
       const depth = r * (0.22 - 0.14 * age), rim = r * (0.05 - 0.035 * age);
-      if (t < 1) h += -depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t;
+      if (t < 1) { h += -depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t; CRAT = 1; }
       else { const k = (t - 1) / 0.8; h += rim * (1 - k) * (1 - k); }
       if (age < 0.12) BRIGHT += 0.35 * Math.max(0, 1 - t / 1.8);
     }
   }
-  BRIGHT *= quiet;
+  BRIGHT *= quiet; CRAT *= quiet;
   return h * quiet;
 }
 // Mars dune fields: dark basalt sand piled into ridges across the wind (gentle windward side, steep lee face)
@@ -416,6 +438,7 @@ function detailAt(px, py, pz, step = 0) {
 }
 
 let SRC = '';  // side output: which data set dominated
+let SRCI = 0;  // side output, numeric: 1 = high-res patch, 0.5 = 16 px/° tile, 0 = 4 px/° fallback (blended)
 function baseAt(px, py, pz) {
   let hp = 0, w = 0;
   for (const p of PATCHES) {
@@ -429,11 +452,12 @@ function baseAt(px, py, pz) {
     const ww = edge >= 40 ? 1 : (edge / 40) * (edge / 40) * (3 - 2 * edge / 40);
     if (ww > w) { w = ww; hp = bicubicArr(p.data, p.n, fx, fy); }
   }
-  if (w >= 1) { SRC = PL.src[0]; return hp; }
+  if (w >= 1) { SRC = PL.src[0]; SRCI = 1; return hp; }
   const lat = unitLat(py), lon = unitLon(px, pz);
   const t = T16[tileIndex(lat, lon)];
   const hb = sample16(lat, lon);
   SRC = w > 0.5 ? PL.src[0] : t ? PL.src[1] : PL.src[2];
+  SRCI = w + (1 - w) * (t ? 0.5 : 0);
   return hb + (hp - hb) * w;
 }
 function surfaceAt(px, py, pz, step = 0) { return baseAt(px, py, pz) + detailAt(px, py, pz, step); }
@@ -723,21 +747,22 @@ function glowTexture() {
 }
 
 // ---- terrain material: LROC colour + multi-scale triplanar regolith detail + curvature of the Moon
-const curvUniforms = { uCamXZ: { value: new THREE.Vector2() }, uInv2R: { value: 1 / (2 * R) }, tDetN: { value: detailN }, tDetA: { value: detailA }, uLayers: { value: 0 } };
+const curvUniforms = { uCamXZ: { value: new THREE.Vector2() }, uInv2R: { value: 1 / (2 * R) }, tDetN: { value: detailN }, tDetA: { value: detailA }, uLayers: { value: 0 }, uOverlay: { value: 0 } };
 const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 csm.setupMaterial(terrainMat);
 const csmHook = terrainMat.onBeforeCompile;
 terrainMat.onBeforeCompile = (sh, r) => {
   csmHook(sh, r);
   Object.assign(sh.uniforms, curvUniforms);
-  sh.vertexShader = 'uniform vec2 uCamXZ; uniform float uInv2R; varying vec3 vWP; varying vec3 vWN;\n' + sh.vertexShader.replace('#include <project_vertex>', `
+  sh.vertexShader = 'uniform vec2 uCamXZ; uniform float uInv2R; varying vec3 vWP; varying vec3 vWN; attribute vec4 aOvl; varying vec4 vOvl;\n' + sh.vertexShader.replace('#include <project_vertex>', `
+    vOvl = aOvl;
     vec4 wpos = modelMatrix * vec4( transformed, 1.0 );
     vWP = wpos.xyz; vWN = normalize( mat3( modelMatrix ) * objectNormal );
     vec2 dxz = wpos.xz - uCamXZ;
     wpos.y -= dot( dxz, dxz ) * uInv2R;
     vec4 mvPosition = viewMatrix * wpos;
     gl_Position = projectionMatrix * mvPosition;`);
-  sh.fragmentShader = `uniform sampler2D tDetN; uniform sampler2D tDetA; uniform float uLayers; varying vec3 vWP; varying vec3 vWN;
+  sh.fragmentShader = `uniform sampler2D tDetN; uniform sampler2D tDetA; uniform float uLayers; uniform float uOverlay; varying vec3 vWP; varying vec3 vWN; varying vec4 vOvl;
     vec3 triBlend(vec3 n){ vec3 b = pow(abs(n), vec3(6.0)); return b / (b.x + b.y + b.z); }
     float triA(vec3 p, vec3 bw){
       if (bw.y > 0.985) return texture2D(tDetA, p.xz).r;
@@ -777,6 +802,17 @@ terrainMat.onBeforeCompile = (sh, r) => {
         }
       }
       diffuseColor.rgb *= alb;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      // "measured vs generated" overlay (key O): data source as red -> yellow -> green, generated height as magenta
+      if (uOverlay > 0.0) {   // value = brightness gain (Mars has a dimmer sun)
+        float m = vOvl.x;
+        vec3 c = m < 0.5 ? mix(vec3(0.85, 0.10, 0.06), vec3(0.95, 0.78, 0.08), m * 2.0) : mix(vec3(0.95, 0.78, 0.08), vec3(0.12, 0.78, 0.22), m * 2.0 - 1.0);
+        c = mix(c, vec3(0.92, 0.10, 0.85), vOvl.y * 0.85);
+        c = mix(c, vec3(0.10, 0.80, 0.95), smoothstep(0.25, 0.35, vOvl.z) * 0.8);
+        float ce = abs(vOvl.w - 0.5) / max(fwidth(vOvl.w), 1e-4);
+        c = mix(c, vec3(1.0), (1.0 - clamp(ce - 0.5, 0.0, 1.0)) * step(0.02, fwidth(vOvl.w)) * 0.9);
+        diffuseColor.rgb = c * uOverlay * 0.4 * (0.75 + 0.25 * alb);
+      }`)
     .replace('#include <normal_fragment_maps>', `
       {
         vec3 nD = nW0;
@@ -799,17 +835,20 @@ function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
   const size = ROOT / (1 << L), step = size / SEG, x0 = -ROOT / 2 + i * size, z0 = -ROOT / 2 + j * size;
   const cx = x0 + size / 2, cz = z0 + size / 2;
   const n1 = SEG + 1, n3 = SEG + 3;
-  const H = new Float32Array(n3 * n3);
+  const H = new Float32Array(n3 * n3), Dt = new Float32Array(n3 * n3);   // Dt: generated part of the height
   const nv = n1 * n1 + 4 * SEG;
   const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), uv = new Float32Array(nv * 2);
+  const ovl = new Uint8Array(nv * 4);   // data overlay: measured source, generated height, dune, crater (baked, so toggling is free)
   const rgb = [0, 0, 0];
   for (let b = 0; b < n3; b++) for (let a = 0; a < n3; a++) {
     const x = x0 + (a - 1) * step, z = z0 + (b - 1) * step;
     localToUnit(x, z);
     const inner = a >= 1 && a <= n1 && b >= 1 && b <= n1;
-    H[b * n3 + a] = surfaceAt(UX, UY, UZ, step);
+    const hBase = baseAt(UX, UY, UZ), hDet = detailAt(UX, UY, UZ, step);
+    H[b * n3 + a] = hBase + hDet; Dt[b * n3 + a] = hDet;
     if (inner) {
       const k = (b - 1) * n1 + (a - 1);
+      ovl[k * 4] = SRCI * 255; ovl[k * 4 + 2] = DUNE * 255; ovl[k * 4 + 3] = CRAT * 255;
       colourAt(UX, UY, UZ, rgb);
       const br = 1 + BRIGHT;
       const ag = PL.albedo, dd = 1 - DUNE * 0.28; col[k * 3] = rgb[0] * ag * br * dd; col[k * 3 + 1] = rgb[1] * ag * br * dd * 1.04; col[k * 3 + 2] = rgb[2] * ag * br * dd * 1.12;
@@ -832,6 +871,9 @@ function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
     let nx = (H[hb - 1] - H[hb + 1]) / (2 * step), nz = (H[hb - n3] - H[hb + n3]) / (2 * step);
     const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
     nor[k * 3] = nx * inv; nor[k * 3 + 1] = inv; nor[k * 3 + 2] = nz * inv;
+    // overlay: steepness the generated detail adds (what makes a bump or crater visible), full at ~11°
+    const gx = (Dt[hb + 1] - Dt[hb - 1]) / (2 * step), gz = (Dt[hb + n3] - Dt[hb - n3]) / (2 * step);
+    ovl[k * 4 + 1] = Math.min(1, Math.hypot(gx, gz) / 0.2) * 255;
     uv[k * 2] = (x0 + a * step) / 5; uv[k * 2 + 1] = (z0 + b * step) / 5;
   }
   // skirt around the border hides cracks between LOD levels
@@ -844,6 +886,7 @@ function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
   border.forEach((src, s) => {
     const k = n1 * n1 + s;
     for (let c = 0; c < 3; c++) { pos[k * 3 + c] = pos[src * 3 + c]; nor[k * 3 + c] = nor[src * 3 + c]; col[k * 3 + c] = col[src * 3 + c]; }
+    for (let c = 0; c < 4; c++) ovl[k * 4 + c] = ovl[src * 4 + c];
     pos[k * 3 + 1] -= drop; uv[k * 2] = uv[src * 2]; uv[k * 2 + 1] = uv[src * 2 + 1];
   });
   if (!CHUNK_INDEX) {     // same topology for every chunk: build it once and share it
@@ -864,6 +907,7 @@ function buildChunk(L, i, j, ed = [0, 0, 0, 0]) {
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('aOvl', new THREE.BufferAttribute(ovl, 4, true));
   g.setIndex(CHUNK_INDEX);
   g.computeBoundingSphere();
   { const dd = Math.hypot(cx - LODC.x, cz - LODC.z) + size; g.boundingSphere.radius += dd * dd / (2 * R) * 1.5 + 2; }   // room for the curvature applied in the shader
@@ -1030,6 +1074,8 @@ function setHeadlights(on) {
 // ---- boulders: scattered by deterministic hashing, denser around fresh craters
 const ROCK_TILE = 48;
 const rockMat = new THREE.MeshStandardMaterial({ color: 0x9a948c, roughness: 0.95, metalness: 0, map: detailA, normalMap: detailN, normalScale: new THREE.Vector2(1.5, 1.5) });
+const rockColour = new THREE.Color(0x9a948c), OVL_ROCK = new THREE.Color(0xff2ad8);
+const overlay = { on: false };
 csm.setupMaterial(rockMat);
 function rockGeometry(seed, detail = 3) {
   const g = new THREE.IcosahedronGeometry(1, detail);
@@ -1073,7 +1119,7 @@ function setRockStyle(mars) {
   if (mars && !marsRockGeos) { marsRockGeos = [1, 2, 3, 4, 5, 6].map(sd => marsRockGeometry(sd, 1)); marsRockGeosFar = [1, 2, 3, 4, 5, 6].map(sd => marsRockGeometry(sd, 0)); }
   rockMeshes.forEach((m, i) => m.geometry = mars ? marsRockGeos[i] : rockGeos[i]);
   rockMeshesFar.forEach((m, i) => m.geometry = mars ? marsRockGeosFar[i] : rockGeosFar[i]);
-  rockMat.flatShading = mars; rockMat.color.set(mars ? 0x7c6a5c : 0x9a948c);
+  rockMat.flatShading = mars; rockColour.set(mars ? 0x7c6a5c : 0x9a948c); rockMat.color.copy(overlay.on ? OVL_ROCK : rockColour);
   rockMat.map = mars ? marsDetA : detailA; rockMat.normalMap = mars ? marsDetN : detailN;
   rockMat.needsUpdate = true;
 }
@@ -1238,6 +1284,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyH') $('hudTR').classList.toggle('hidden');
   if (e.code === 'KeyL') setHeadlights(!headlights.on);
   if (e.code === 'KeyG') setQuality(!Q.high);
+  if (e.code === 'KeyO') toggleOverlay();
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -1278,6 +1325,21 @@ function resetVehicle() {
   if (astro.active) { astro.y = hPhys(astro.x, astro.z) + 0.5; astro.vy = 0; return; }
   rover.speed = 0; rover.vy = 0; rover.air = false; rover.y = hPhys(rover.x, rover.z) + 0.3; toast('Rover reset');
 }
+// "measured vs generated" overlay: only flips a uniform and the rock colour; the per-vertex data is baked at chunk build
+function toggleOverlay(on = !overlay.on) {
+  overlay.on = on;
+  curvUniforms.uOverlay.value = on ? (PL.atmo ? 1.4 : 1) : 0;
+  rockMat.color.copy(on ? OVL_ROCK : rockColour);
+  updateLegend();
+  $('legend').classList.toggle('hidden', !on || mode !== 'surface');
+  $('bOvl').classList.toggle('on', on);
+  toast(on ? 'Data overlay on · O to hide' : 'Data overlay off');
+}
+function updateLegend() {
+  $('lgPatch').textContent = PL.src[0]; $('lgTile').textContent = PL.src[1]; $('lgLow').textContent = PL.src[2].replace(' (loading finer…)', ' fallback');
+  $('lgDune').parentElement.style.display = PL.atmo ? '' : 'none';
+}
+$('bOvl').onclick = () => toggleOverlay();
 $('bLights').onclick = () => setHeadlights(!headlights.on); $('bGfx').onclick = () => setQuality(!Q.high);
 $('bExit').onclick = toggleExit; $('bCam').onclick = cycleCamera; $('bOrbit').onclick = () => toOrbit();
 
@@ -1323,6 +1385,7 @@ const fade = (on, text = '') => { $('fade').style.opacity = on ? 1 : 0; $('fadeT
 function showUI(m) {
   for (const id of ['globeUI', 'globeHint']) $(id).classList.toggle('hidden', m !== 'globe');
   for (const id of ['hudTL', 'hudBottom', 'hudTR']) $(id).classList.toggle('hidden', m !== 'surface');
+  $('legend').classList.toggle('hidden', m !== 'surface' || !overlay.on);
   $('touch').classList.toggle('on', m === 'surface');
   $('hover').classList.add('hidden');
 }
@@ -1640,6 +1703,8 @@ async function loadPlanet(id, first = false) {
     if (P.atmo && !marsDetN) { marsDetN = loadTex('mars/detail_n.png'); marsDetA = loadTex('mars/detail_a.png'); }
     curvUniforms.tDetN.value = P.atmo ? marsDetN : detailN; curvUniforms.tDetA.value = P.atmo ? marsDetA : detailA;
     curvUniforms.uLayers.value = P.atmo ? 1 : 0;
+    if (overlay.on) curvUniforms.uOverlay.value = P.atmo ? 1.4 : 1;
+    updateLegend();
     setRockStyle(P.atmo);
     applyAtmosphere();
     buildSiteList();
@@ -1687,7 +1752,7 @@ document.querySelectorAll('#planetTabs button').forEach(b => b.onclick = () => {
     astroObj.add(astroModel); astroObj.visible = false;
     mode = 'globe'; controls.enabled = true; showUI('globe');
     $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
-    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
+    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, toggleOverlay, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
       sim: (sec, ks) => { ks.forEach(k => keys.add(k)); let air = 0, maxAir = 0, vmax = 0, wasAir = false; for (let i = 0; i < sec * 120; i++) { stepRover(1 / 120); if (astro.active) stepAstro(1 / 120, camState.smoothYaw); vmax = Math.max(vmax, rover.speed); if (rover.air && !wasAir) air++; wasAir = rover.air; if (rover.air) maxAir = Math.max(maxAir, rover.y - hPhys(rover.x, rover.z)); if (Math.hypot(rover.x, rover.z) > 16000) recentre(); } ks.forEach(k => keys.delete(k)); updateTerrain(rover.x, rover.z, 0, true); return { x: rover.x, z: rover.z, y: rover.y, vmax, airs: air, maxAir, ay: astro.y }; },
     };
   } catch (e) {
