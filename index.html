@@ -467,13 +467,13 @@ function duneField(X, Y, Z, step) {
   return (h - amp * 0.45) * mask;
 }
 // Over fine DTMs (FINEW/FINES, from baseAt), generated features the data already resolves are faded out, so nothing
-// made up sits beside real craters. A stereo DTM's effective resolution is ~3x its post spacing; features
-// (noise wavelength or crater diameter) under that are kept, over twice that are dropped.
+// made up sits beside real craters. Features (noise wavelength or crater diameter) under 2.5x the post spacing
+// are kept, over 4.5x are dropped (2 m NAC: generated craters stay below ~7 m; 5 m: ~17 m; 60 m SLDEM: ~210 m).
 // Suppression adds up over every fine data set present (e.g. NAC fading into SLDEM at a patch edge), each with its own
 // resolution limit, and ramps in over the outer third of a patch's blend band, faster than its heights do.
 function unresolved(size) {
   let s = 0;
-  for (let i = 0; i < NFINE; i++) s += FINEW[i] * sstep(size, FINES[i] * 3, FINES[i] * 6);
+  for (let i = 0; i < NFINE; i++) s += FINEW[i] * sstep(size, FINES[i] * 2.5, FINES[i] * 4.5);
   return s >= 1 ? 0 : 1 - s;
 }
 function detailAt(px, py, pz, step = 0) {
