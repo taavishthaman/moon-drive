@@ -21,7 +21,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 | Path | What |
 |---|---|
 | `index.html` | The whole app: one ES module (~1,700 lines), three.js r187 from jsDelivr via an importmap |
-| `height4.png`, `h16_{ty}_{tx}.png`, `color4k.jpg`, `patch_*.png`, `cpatch_*.jpg`, `detail_{n,a}.png` | Moon data |
+| `height4.png`, `h16_{ty}_{tx}.png`, `color4k.jpg`, `patch_*.png`, `cpatch_*.jpg`, `detail_{n,a}.png` | Moon data (`patch_a1{1,5,7}nac.png` are the fine NAC DTM patches) |
 | `mars/…` | The same set for Mars |
 | `earth.jpg` | NASA Blue Marble, for Earth in the lunar sky |
 | `model_{rover,lm,astronaut}.js` | glTF models (meshopt-compressed) stored as base64 strings in JS modules. Done originally because the first host wouldn't serve `.glb`; fine to keep |
@@ -31,7 +31,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 
 ## Data formats (keep these consistent between Python and JS)
 
-- **Height PNG:** `value = round(metres * 2 + 20000)`, 16 bits, R = high byte, G = low byte. Read by `loadHeight()`. Heights are relative to the reference radius (Moon 1737.4 km) or the areoid (Mars).
+- **Height PNG:** `value = round(metres * 2 + 20000)`, 16 bits, R = high byte, G = low byte. B is an optional fraction of a step (`metres = (R*256 + G + B/256 - 20000) / 2`); only the fine DTM patches use it, every other file has B = 0. Read by `loadHeight()`. Heights are relative to the reference radius (Moon 1737.4 km) or the areoid (Mars).
 - **Equirectangular maps:** lon −180..180 left to right, lat 90..−90 top to bottom.
   - `height4.png`: 1440×720.
   - `h16_*`: a 5760×2880 grid split into 4×2 tiles of 1440², loaded on demand by `ensureTile()`.
@@ -39,7 +39,8 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 - **Gnomonic patches** around sites (`patch_<id>.png`, 1024², spacing `site.sp`, default 240 m) and colour patches (`cpatch_<id>.jpg`, 512², spacing `site.csp`, default 480 m):
   - Centred exactly on the site's lat/lon. Geometry is in `tools/heightpng.py`, matching `makeFrame()` and `baseAt()`.
   - `ensurePatchesNear()` loads any site patch within range of the landing point, and the polar cap patches (`PL.capPatches`, ids `ncap`/`scap`, centred on ±90°) poleward of `CAP_LAT` (78°).
-  - `baseAt()` blends a patch in over its outer 40 px. Site patches win over cap patches; cap colour patches are drawn first so site colour paints over them.
+  - `baseAt()` composites `PATCHES` finest first (`addPatch()` keeps them sorted: fine DTMs, site patches, caps), each blended in over its outer `blend` px (default 40). Cap colour patches are drawn first so site colour paints over them.
+  - **Fine DTM patches** (`PL.finePatches`, Moon only so far): LROC NAC stereo models at Apollo 11/15 (2 m) and 17 (5 m), from `tools/nac_patches.py`. Rectangular (`n` × `m`), with their own centre (not the site's), 24-bit heights, a 450 m blend band, loaded within `FINE_RANGE` (60 km). Over them `detailAt()` fades out generated noise and craters larger than ~3× the post spacing (`unresolved()`, driven by side outputs `FINE`/`FINESP`), so generated detail never sits beside the real craters.
   - A site with `patchId` reuses another site's patch files (the Olympus escarpment uses `patch_olympus`).
   - Caps come from `tools/polar_caps.py`, which box-filters source rows in longitude before resampling. Mars has no MOLA tracks poleward of ~87° (`fillLat`); the HUD labels that zone as interpolated.
 
@@ -49,7 +50,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 - **Height function:**
   - `surfaceAt(unit vector, step) = baseAt()` (measured data: patch, else 16 px/° tile, else 4 px/°) `+ detailAt()` (generated).
   - `detailAt()` adds value noise, `craterField()` (3D cell hashing; each crater must stay inside its own cell, or it gets sliced along cell planes), and on Mars `duneField()`.
-  - Side outputs: `SRC` (data source label), `SRCI` (numeric: 1 patch, 0.5 tile, 0 fallback), `BRIGHT` (fresh crater), `DUNE` (dune coverage), `CRAT` (inside a generated crater).
+  - Side outputs: `SRC` (data source label), `SRCI` (numeric: 1 fine DTM, 0.75 site/cap patch, 0.5 tile, 0 fallback), `BRIGHT` (fresh crater), `DUNE` (dune coverage), `CRAT` (inside a generated crater).
   - The `step` argument drops features smaller than the mesh spacing (LOD-aware).
 - **Local frame:** a tangent plane at `FR` with x east, y up, z **south**. Heading: forward = `(sin yaw, cos yaw)`, so `yaw = π` faces north. `localToUnit()` / `unitToLocal()` convert. `recentre()` moves the frame onto the rover beyond 16 km and remaps rover, astronaut, tracks and lander.
 - **Terrain mesh:** quadtree of 32×32 chunks (`selectLeaves`, `updateTerrain`, `buildChunk`).

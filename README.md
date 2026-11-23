@@ -44,6 +44,7 @@ The page loads three.js from cdn.jsdelivr.net, so viewers need an internet conne
 | `patch_*.png` | 64 px/degree (~240 m) close-up patches around the eight featured sites |
 | `cpatch_*.jpg` | Sharper colour patches from the 8K LROC mosaic (Ina, Reiner Gamma) |
 | `patch_ncap.png`, `patch_scap.png`, `cpatch_*cap.jpg` | Polar cap patches (height ~400 m, colour ~1.2 km) for both poles, loaded poleward of 78° |
+| `patch_a11nac.png`, `patch_a15nac.png`, `patch_a17nac.png` | LROC NAC stereo elevation models at the Apollo 11, 15 (2 m) and 17 (5 m) sites, nested in the 240 m patches. Generated craters are switched off over them |
 | `color4k.jpg` | LROC colour map |
 | `detail_n.png`, `detail_a.png` | Generated tileable regolith detail (normal and albedo maps) |
 | `earth.jpg` | NASA Blue Marble Earth texture (NASA SVS) |
