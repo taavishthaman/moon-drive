@@ -13,7 +13,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 ```
 
 - Headless Chrome uses software rendering (~1 fps). Judge visuals from screenshots, and judge physics with `window.__moon.sim(seconds, ['KeyW', ...])`, which steps the simulation at a fixed 1/120 s.
-- Debug hooks on `window.__moon`: `land(site)`, `loadPlanet(id)`, `sim(sec, keys)`, `state()`, `SITES`, `planet`, `rover`, `astro`, `camState`, `toggleExit()`, `cycleCamera()`, `toggleOverlay()`, `globe`, `gCam`.
+- Debug hooks on `window.__moon`: `land(site)`, `loadPlanet(id)`, `sim(sec, keys)`, `state()`, `SITES`, `planet`, `rover`, `astro`, `camState`, `toggleExit()`, `cycleCamera()`, `toggleOverlay()`, `globe`, `gCam`, `probe(x, z, step)` (data source, fine-DTM weight, generated detail and crater flag at a local point).
 - Check after every change: no page errors, a Moon landing (`a15`) and a Mars landing (`olympus`) both render, and driving with `sim` works.
 
 ## Files

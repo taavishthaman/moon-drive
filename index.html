@@ -435,7 +435,7 @@ function craterField(X, Y, Z, step = 0) {
       const ha = hash3(ix, iy, iz, seed + 5), age = PL.atmo ? 0.35 + 0.65 * ha : Math.pow(ha, 0.6);
       // fresh simple craters: rim-to-floor depth ~0.19 D (depth 0.3 r + rim 0.07 r); degraded ones ~0.05 D
       const depth = r * (0.3 - 0.24 * age), rim = r * (0.07 - 0.055 * age);
-      if (t < 1) { h += keep * (-depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t); if (keep > 0.5) CRAT = 1; }
+      if (t < 1) { h += keep * (-depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t); if (keep > 0.5 && r >= step) CRAT = 1; }   // overlay outline only where the mesh can draw it (else it shows 2-3x too big)
       else { const k = (t - 1) / 0.8; h += keep * rim * (1 - k) * (1 - k); }
       if (age < 0.12) BRIGHT += keep * 0.35 * Math.max(0, 1 - t / 1.8);
     }
@@ -1933,7 +1933,9 @@ document.querySelectorAll('#planetTabs button').forEach(b => b.onclick = () => {
     astroObj.add(astroModel); astroObj.visible = false;
     mode = 'globe'; controls.enabled = true; showUI('globe');
     $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
-    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, toggleOverlay, get globe() { return globe; }, gCam, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
+    window.__moon = { land, rover, astro, keys, camState, toggleExit, cycleCamera, loadPlanet, toggleOverlay,
+      // height sources and generated detail at local (x, z) for a mesh step: { src, srci, fine, fineSp, crat, detail }
+      probe(x, z, step = 0) { localToUnit(x, z); const b = baseAt(UX, UY, UZ), d = detailAt(UX, UY, UZ, step); return { src: SRC, srci: SRCI, fine: FINE, fineSp: FINESP, crat: CRAT, base: b, detail: d }; }, get globe() { return globe; }, gCam, state: () => mode, get SITES() { return SITES; }, get planet() { return PL.id; },
       sim: (sec, ks) => { ks.forEach(k => keys.add(k)); let air = 0, maxAir = 0, vmax = 0, wasAir = false; for (let i = 0; i < sec * 120; i++) { stepRover(1 / 120); if (astro.active) stepAstro(1 / 120, camState.smoothYaw); vmax = Math.max(vmax, rover.speed); if (rover.air && !wasAir) air++; wasAir = rover.air; if (rover.air) maxAir = Math.max(maxAir, rover.y - hPhys(rover.x, rover.z)); if (Math.hypot(rover.x, rover.z) > 16000) recentre(); } ks.forEach(k => keys.delete(k)); updateTerrain(rover.x, rover.z, 0, true); return { x: rover.x, z: rover.z, y: rover.y, vmax, airs: air, maxAir, ay: astro.y }; },
     };
   } catch (e) {
