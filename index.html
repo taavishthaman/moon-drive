@@ -414,7 +414,7 @@ function craterField(X, Y, Z, step = 0) {
   for (let L = 0; L < CRATER_LEVELS.length; L++) {
     const { cell, rmax, prob, seed } = CRATER_LEVELS[L];
     if (rmax < step * 1.2) continue;      // too small to show at this mesh resolution
-    if (FINE >= 1 && rmax * 0.5 > FINESP * 6) continue;   // every crater of this level is resolved by the fine DTM here
+    if (NFINE && unresolved(rmax * 0.5) <= 0) continue;   // every crater of this level is resolved by the fine DTM here
     const cx = Math.floor(X / cell), cy = Math.floor(Y / cell), cz = Math.floor(Z / cell);
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
       const ix = cx + dx, iy = cy + dy, iz = cz + dz;
@@ -466,10 +466,16 @@ function duneField(X, Y, Z, step) {
   if (step < 14) h += prof(along / 38 + warp * 1.7 + 0.37) * 1.3;
   return (h - amp * 0.45) * mask;
 }
-// Over a fine DTM (FINE, from baseAt), generated features the data already resolves are faded out, so nothing
+// Over fine DTMs (FINEW/FINES, from baseAt), generated features the data already resolves are faded out, so nothing
 // made up sits beside real craters. A stereo DTM's effective resolution is ~3x its post spacing; features
 // (noise wavelength or crater diameter) under that are kept, over twice that are dropped.
-function unresolved(size) { return FINE > 0 ? 1 - FINE * sstep(size, FINESP * 3, FINESP * 6) : 1; }
+// Suppression adds up over every fine data set present (e.g. NAC fading into SLDEM at a patch edge), each with its own
+// resolution limit, and ramps in over the outer third of a patch's blend band, faster than its heights do.
+function unresolved(size) {
+  let s = 0;
+  for (let i = 0; i < NFINE; i++) s += FINEW[i] * sstep(size, FINES[i] * 3, FINES[i] * 6);
+  return s >= 1 ? 0 : 1 - s;
+}
 function detailAt(px, py, pz, step = 0) {
   const X = px * R, Y = py * R, Z = pz * R;
   const dune = duneField(X, Y, Z, step) * unresolved(60), duneMask = DUNE * unresolved(60);
@@ -486,7 +492,8 @@ function detailAt(px, py, pz, step = 0) {
 
 let SRC = '';  // side output: which data set dominated
 let SRCI = 0;  // side output, numeric: 1 = metre-scale DTM, 0.875 = ~60 m DTM, 0.75 = site/cap patch, 0.5 = 16 px/° tile, 0 = 4 px/° fallback (blended)
-let FINE = 0, FINESP = 0;   // side output: weight of a fine DTM patch here and its post spacing (detailAt drops what it resolves)
+let FINE = 0, FINESP = 0;   // side output: weight of the dominant fine DTM patch here and its post spacing (for probe / HUD)
+const FINEW = new Float32Array(8), FINES = new Float32Array(8); let NFINE = 0;   // suppression weight and post spacing per fine DTM here
 // PATCHES is kept finest first (fine DTMs, then site patches, then polar caps), and composited front to back,
 // so a finer data set always wins where it exists and blends into the coarser one over its outer `blend` px
 // (40 by default; fine DTMs use 450 m, since the generated swell they replace fades out over the same band)
@@ -494,7 +501,7 @@ function patchRank(p) { return (p.fine ? 0 : p.cap ? 2 : 1) * 1e6 + p.sp; }
 function addPatch(p) { PATCHES.push(p); PATCHES.sort((a, b) => patchRank(a) - patchRank(b)); }
 function baseAt(px, py, pz) {
   let h = 0, rem = 1, wf = 0, ws = 0, wc = 0, lab = null, labW = 0;
-  FINE = 0;
+  FINE = 0; NFINE = 0;
   for (const p of PATCHES) {
     const d = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
     if (d < p.cosLim) continue;
@@ -506,6 +513,7 @@ function baseAt(px, py, pz) {
     const bw = p.blend || 40, e = edge / bw, ww = e >= 1 ? 1 : e * e * (3 - 2 * e);
     const a = rem * ww;
     if (a <= 0) continue;
+    if (p.fine && NFINE < 8) { const es = Math.min(1, e * 3); FINEW[NFINE] = rem * es * es * (3 - 2 * es); FINES[NFINE++] = p.sp; }
     h += a * bicubicArr(p.data, p.n, fx, fy, p.m); rem -= a;
     if (p.fine) { wf += a * (p.sp <= 10 ? 1 : 0.875); if (a > FINE) { FINE = a; FINESP = p.sp; } } else if (p.cap) wc += a; else ws += a;
     if (a > labW) { labW = a; lab = p; }
