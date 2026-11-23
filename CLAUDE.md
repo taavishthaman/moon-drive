@@ -21,7 +21,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 | Path | What |
 |---|---|
 | `index.html` | The whole app: one ES module (~1,700 lines), three.js r187 from jsDelivr via an importmap |
-| `height4.png`, `h16_{ty}_{tx}.png`, `color4k.jpg`, `patch_*.png`, `cpatch_*.jpg`, `detail_{n,a}.png` | Moon data (`patch_a1{1,5,7}nac.png` are the fine NAC DTM patches) |
+| `height4.png`, `h16_{ty}_{tx}.png`, `color4k.jpg`, `patch_*.png`, `cpatch_*.jpg`, `detail_{n,a}.png` | Moon data (`patch_a1{1,5,7}nac.png`: LROC NAC DTM patches; `patch_<site>sl.png`: SLDEM2015 60 m patches; `ra_<site>.png`: Diviner rock abundance) |
 | `mars/…` | The same set for Mars |
 | `earth.jpg` | NASA Blue Marble, for Earth in the lunar sky |
 | `model_{rover,lm,astronaut}.js` | glTF models (meshopt-compressed) stored as base64 strings in JS modules. Done originally because the first host wouldn't serve `.glb`; fine to keep |
@@ -40,7 +40,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
   - Centred exactly on the site's lat/lon. Geometry is in `tools/heightpng.py`, matching `makeFrame()` and `baseAt()`.
   - `ensurePatchesNear()` loads any site patch within range of the landing point, and the polar cap patches (`PL.capPatches`, ids `ncap`/`scap`, centred on ±90°) poleward of `CAP_LAT` (78°).
   - `baseAt()` composites `PATCHES` finest first (`addPatch()` keeps them sorted: fine DTMs, site patches, caps), each blended in over its outer `blend` px (default 40). Cap colour patches are drawn first so site colour paints over them.
-  - **Fine DTM patches** (`PL.finePatches`, Moon only so far): LROC NAC stereo models at Apollo 11/15 (2 m) and 17 (5 m), from `tools/nac_patches.py`. Rectangular (`n` × `m`), with their own centre (not the site's), 24-bit heights, a 450 m blend band, loaded within `FINE_RANGE` (60 km). Over them `detailAt()` fades out generated noise and craters larger than ~3× the post spacing (`unresolved()`, driven by side outputs `FINE`/`FINESP`), so generated detail never sits beside the real craters.
+  - **Fine DTM patches** (`PL.finePatches`): Moon: LROC NAC stereo models at Apollo 11/15 (2 m) and 17 (5 m) (`tools/nac_patches.py`), and SLDEM2015 at 60 m around the seven sites inside ±60° (`tools/sldem_patches.py`, 2048², centred on the site via `site:`). Mars: HiRISE DTMs at Jezero and Gale, resampled to 2 m (`tools/hirise_patches.py`; the Gale one stops just west of Bradbury Landing, which is at the edge of the strip). Rectangular (`n` × `m`), 24-bit heights, a `blend` band in metres (default 450), loaded within `range` (default `FINE_RANGE`, 60 km). The data tools fetch only the windows they need with HTTP range requests. Over them `detailAt()` fades out generated noise and craters larger than ~3× the post spacing (`unresolved()`, driven by side outputs `FINE`/`FINESP`), so generated detail never sits beside the real craters.
   - A site with `patchId` reuses another site's patch files (the Olympus escarpment uses `patch_olympus`).
   - Caps come from `tools/polar_caps.py`, which box-filters source rows in longitude before resampling. Mars has no MOLA tracks poleward of ~87° (`fillLat`); the HUD labels that zone as interpolated.
 
@@ -50,6 +50,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 - **Height function:**
   - `surfaceAt(unit vector, step) = baseAt()` (measured data: patch, else 16 px/° tile, else 4 px/°) `+ detailAt()` (generated).
   - `detailAt()` adds value noise, `craterField()` (3D cell hashing; each crater must stay inside its own cell, or it gets sliced along cell planes), and on Mars `duneField()`.
+  - Craters: four `CRATER_LEVELS` with a truncated power law inside each level, together a continuous cumulative N(>D) ∝ D⁻² at ~60–70% of Trask's mare equilibrium. Cells are 2 × `rmax` (the 1.8 r reach must stay within the neighbouring cell). Ages skew old (`ha^0.6`); fresh bowls are ~0.19 D deep rim to floor. Mars thins them with `craterScale`.
   - Side outputs: `SRC` (data source label), `SRCI` (numeric: 1 fine DTM, 0.75 site/cap patch, 0.5 tile, 0 fallback), `BRIGHT` (fresh crater), `DUNE` (dune coverage), `CRAT` (inside a generated crater).
   - The `step` argument drops features smaller than the mesh spacing (LOD-aware).
 - **Local frame:** a tangent plane at `FR` with x east, y up, z **south**. Heading: forward = `(sin yaw, cos yaw)`, so `yaw = π` faces north. `localToUnit()` / `unitToLocal()` convert. `recentre()` moves the frame onto the rover beyond 16 km and remaps rover, astronaut, tracks and lander.
@@ -69,6 +70,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
   - `rockCollide()` handles boulders.
   - `stepAstro()` handles the walking astronaut.
 - **Rocks:** deterministic per 48 m tile (`genRockTile`). Instanced meshes with near/far LOD; Mars uses its own angular geometry and material (`setRockStyle`).
+  - On the Moon, density is scaled by the Diviner rock-abundance maps around the sites (`RAMAPS`, `rockMul()`): relative to typical mare (`RA_REF` = 0.36% rock cover), clamped to 0.15–8×. The absolute count is still tuned for performance (about 10× fewer >1 m rocks than Diviner implies), so only the pattern is real.
 - **Rendering:**
   - Cascaded shadows (3 cascades, 2.5 km).
   - Headlight spotlights.
@@ -84,4 +86,5 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 - **Reload on data changes:** anything that changes height data must bump `terrainVersion` (chunks rebuild) and clear `PH` (physics cache).
 - **Hand-tuned values:** performance work cut a frame from 6.7 M to 2.3 M triangles and 2,805 to 968 draw calls. Bounding spheres, shadow casters (`castShadow` only for chunks ≤ 1024 m) and rock LOD were all tuned for this, so re-measure if you touch them.
 - **No made-up features presented as real:** generated detail must not hide or impersonate real features. Use `quiet` zones (see Ina) where a real feature is smaller than the data resolution.
-- **File sizes:** largest data files are ~3 MB. Keep each new file well under GitHub's 100 MB limit (aim < 10 MB).
+- **File sizes:** data files are up to ~7 MB (the SLDEM and HiRISE patches; ~155 MB of data in all). Keep each new file well under GitHub's 100 MB limit (aim < 10 MB).
+  - Git keeps every version of every binary, so avoid regenerating large data files casually. If the data grows much further, move it to Git LFS or cloud storage (e.g. Cloudflare R2) loaded by URL; the CSP already allows `https:` in `connect-src`/`img-src`, but the bucket needs CORS.

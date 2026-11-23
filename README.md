@@ -45,6 +45,9 @@ The page loads three.js from cdn.jsdelivr.net, so viewers need an internet conne
 | `cpatch_*.jpg` | Sharper colour patches from the 8K LROC mosaic (Ina, Reiner Gamma) |
 | `patch_ncap.png`, `patch_scap.png`, `cpatch_*cap.jpg` | Polar cap patches (height ~400 m, colour ~1.2 km) for both poles, loaded poleward of 78° |
 | `patch_a11nac.png`, `patch_a15nac.png`, `patch_a17nac.png` | LROC NAC stereo elevation models at the Apollo 11, 15 (2 m) and 17 (5 m) sites, nested in the 240 m patches. Generated craters are switched off over them |
+| `patch_<site>sl.png` | SLDEM2015 (LOLA + Kaguya) at 60 m, ~120 km around the seven sites inside ±60° |
+| `ra_<site>.png` | Diviner rock abundance around the sites; sets where the generated boulders cluster |
+| `mars/patch_jezhr.png`, `mars/patch_galehr.png` | HiRISE stereo elevation models at Jezero and Gale (Bradbury Landing toward Mount Sharp), at 2 m |
 | `color4k.jpg` | LROC colour map |
 | `detail_n.png`, `detail_a.png` | Generated tileable regolith detail (normal and albedo maps) |
 | `earth.jpg` | NASA Blue Marble Earth texture (NASA SVS) |
@@ -57,6 +60,10 @@ The heightmaps store 16-bit values split across two channels: red is the high by
 ## Credits
 
 - Terrain: NASA / GSFC / Arizona State University, LRO LOLA & LROC, from the NASA SVS "CGI Moon Kit".
+- SLDEM2015 (60 m Moon elevation at the sites): Barker et al. (2016), merged NASA LRO LOLA and JAXA SELENE/Kaguya Terrain Camera data, from the PDS Geosciences Node.
+- LROC NAC elevation models (Apollo 11, 15, 17): NASA/GSFC/Arizona State University.
+- Rock abundance: LRO Diviner Lunar Radiometer, NASA/UCLA (global high-resolution mosaic, Powell et al. 2023).
 - Mars terrain: NASA/GSFC Mars Global Surveyor MOLA (USGS 463 m mosaic). Mars colour: Viking Orbiter MDIM colour mosaic (USGS), public domain.
+- HiRISE elevation models (Jezero, Gale): NASA/JPL/University of Arizona; the Jezero mosaic is the USGS Mars 2020 Terrain Relative Navigation product.
 - Earth: NASA Blue Marble, from NASA's Scientific Visualization Studio.
 - Models: NASA 3D Resources (Mars 2020 Perseverance Rover, Apollo Lunar Module, Astronaut).

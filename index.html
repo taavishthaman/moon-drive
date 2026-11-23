@@ -67,8 +67,13 @@
   #toast { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-family: "Barlow Condensed", sans-serif; font-size: 22px; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 2px 12px #000; pointer-events: none; opacity: 0; transition: opacity .4s; text-align: center; }
   #fade { position: fixed; inset: 0; background: #000; pointer-events: none; opacity: 0; transition: opacity .5s; z-index: 10; display: grid; place-items: center; }
   #fade div { font-family: "Barlow Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-  #credit { position: fixed; bottom: 6px; right: 10px; font-size: 10.5px; color: rgba(255,255,255,.35); }
+  #credit { position: fixed; bottom: 6px; right: 10px; max-width: min(34vw, 520px); text-align: right; line-height: 1.35; font-size: 10.5px; color: rgba(255,255,255,.35); }
   #credit a { color: inherit; }
+  #credit .cShort { display: none; }
+  @media (max-width: 600px) {   /* phones: one short line at the top edge, the full list is in the README */
+    #credit { top: 2px; bottom: auto; left: 0; right: 0; max-width: none; text-align: center; font-size: 9px; white-space: nowrap; }
+    #credit .cLong { display: none; } #credit .cShort { display: inline; }
+  }
   #touch { position: fixed; bottom: 70px; left: 0; right: 0; display: none; justify-content: space-between; padding: 0 18px; pointer-events: none; }
   #touch .pad { display: grid; grid-template-columns: repeat(3, 54px); gap: 6px; pointer-events: auto; }
   #touch button { height: 54px; padding: 0; font-size: 18px; background: rgba(20,22,28,.7); }
@@ -107,6 +112,7 @@
     <span>Elevation</span><span id="hElev">—</span>
     <span>Terrain data</span><span id="hSrc">—</span>
     <span class="poiRow">Target</span><span class="poiRow" id="hPoi">—</span>
+    <span class="noteRow">Detail</span><span class="noteRow" id="hNote">—</span>
     <span>Gravity</span><span id="hGrav">1.62 m/s² · ⅙ g</span>
   </div>
 </div>
@@ -140,6 +146,7 @@
   <h2>Measured vs generated</h2>
   <div class="lgh">Measured (NASA data)</div>
   <div class="lg" id="lgFineRow"><i style="background:#2673ff"></i><span id="lgFine">Stereo DTM (metres)</span></div>
+  <div class="lg" id="lgMidRow"><i style="background:#1f9e90"></i><span id="lgMid">~60 m DTM</span></div>
   <div class="lg"><i style="background:#1fc738"></i><span id="lgPatch">High-res patch</span></div>
   <div class="lg"><i style="background:#f2c714"></i><span id="lgTile">16 px/° grid</span></div>
   <div class="lg"><i style="background:#d91a0f"></i><span id="lgLow">4 px/° fallback</span></div>
@@ -147,7 +154,7 @@
   <div class="lg"><i style="background:linear-gradient(90deg,#666,#eb1ad9)"></i><span>Slope added by generated noise &amp; craters (full at 11°)</span></div>
   <div class="lg"><i style="background:transparent;border:2px solid #fff;border-radius:50%"></i><span>Generated crater</span></div>
   <div class="lg"><i style="background:#1accf2"></i><span id="lgDune">Generated dune field</span></div>
-  <div class="lg"><i style="background:#ff2ad8;border-radius:50%"></i><span>Boulders (all generated)</span></div>
+  <div class="lg"><i style="background:#ff2ad8;border-radius:50%"></i><span id="lgRock">Boulders (all generated)</span></div>
 </div>
 <div id="touch" class="on">
   <div class="pad">
@@ -160,7 +167,7 @@
 </div>
 <div id="toast"></div>
 <div id="fade"><div id="fadeText"></div></div>
-<div id="credit">Terrain: NASA/GSFC/ASU LRO LOLA &amp; LROC (CGI Moon Kit) · Models: NASA 3D Resources</div>
+<div id="credit"></div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -195,33 +202,42 @@ const MARS_SITES = [
   { id: 'scarp', patchId: 'olympus', name: 'Olympus Mons · basal escarpment', lat: 22.814, lon: -137.1034, spawn: [0, 0], yaw: 1.348, poi: [25175, 5712, 'Escarpment top'] },
   { id: 'valles', name: 'Valles Marineris · canyon rim', lat: -9.80, lon: -72.80, sp: 400, csp: 900, colour: true, spawn: [15800, -107800], yaw: 0.196 },   // flat rim, from tools/valles_rim.py
   { id: 'jezero', name: 'Jezero crater · Perseverance landing', lat: 18.4447, lon: 77.4508, sp: 300, csp: 900, colour: true, spawn: [0, 0], yaw: -2.506, poi: [-2850, -3863, 'Delta front'] },
-  { id: 'gale', name: 'Gale crater · Curiosity landing', lat: -4.80, lon: 137.60, sp: 300, csp: 900, colour: true, spawn: [-9335, -12452], yaw: 0.692, poi: [14732, 16567, 'Mount Sharp summit'] },
+  { id: 'gale', name: 'Gale crater · Curiosity landing', lat: -4.80, lon: 137.60, sp: 300, csp: 900, colour: true, spawn: [-9335, -12452], yaw: 0.692, poi: [14732, 16567, 'Mount Sharp summit'], note: 'HiRISE 2 m terrain from ~350 m W' },   // the HiRISE strip ends just W of Bradbury Landing
 ];
 const PLANETS = {
   moon: {
     id: 'moon', name: 'Moon', R: 1737400, G: 1.62, gText: '1.62 m/s² · ⅙ g', dir: '', exag: 6, root: 131072, atmo: false,
-    craterScale: 1, rockBase: 0.11, sunI: 3.6, albedo: 2.2, sites: MOON_SITES,
+    craterScale: 1, rockBase: 0.11, rockMaps: true, sunI: 3.6, albedo: 2.2, sites: MOON_SITES,
     src: ['LOLA 64 px/° patch (~240 m)', 'LOLA 16 px/° (~1.9 km)', 'LOLA 4 px/° (loading finer…)'], capSrc: 'LOLA polar cap (~400 m)',
     // data-only patches centred on the poles (tools/polar_caps.py), loaded when you're poleward of capLat
     capPatches: [{ id: 'ncap', lat: 90, lon: 0, sp: 400, csp: 1200, colour: true }, { id: 'scap', lat: -90, lon: 0, sp: 400, csp: 1200, colour: true }],
-    // LROC NAC stereo DTMs (tools/nac_patches.py): nested inside the site patches, finest data wins
+    // finer DTMs nested inside the site patches, finest data wins: LROC NAC stereo models (tools/nac_patches.py)
+    // and SLDEM2015 LOLA + Kaguya at 60 m (tools/sldem_patches.py, 2048 x 2048, centred on the site)
     finePatches: [
-      { id: 'a11nac', lat: 0.67408, lon: 23.44362, sp: 2, src: 'LROC NAC stereo DTM (2 m)' },
+      ...['a11', 'a15', 'a17', 'tycho', 'copernicus', 'ina', 'reiner'].map(id => ({ id: id + 'sl', site: id, sp: 60, blend: 3000, range: 120000, src: 'SLDEM2015 LOLA + Kaguya (~60 m)' })),
+      { id: 'a11nac', lat: 0.67408, lon: 23.44362, sp: 2, src: 'LROC NAC stereo DTM (2 m)', legend: 'LROC NAC stereo DTM (2–5 m)' },
       { id: 'a15nac', lat: 26.13224, lon: 3.60902, sp: 2, src: 'LROC NAC stereo DTM (2 m)' },
       { id: 'a17nac', lat: 20.19080, lon: 30.77168, sp: 5, src: 'LROC NAC stereo DTM (5 m)' },
     ],
     hd: 'High-detail terrain (~240 m data)', any: 'Anywhere else (~1.9 km data)',
-    credit: 'Terrain: NASA/GSFC/ASU LRO LOLA &amp; LROC (CGI Moon Kit) · Models: NASA 3D Resources',
+    credit: 'Terrain: NASA/GSFC/ASU LRO LOLA &amp; LROC (CGI Moon Kit) · SLDEM2015 (Barker et al., NASA LOLA + JAXA Kaguya) · LROC NAC DTMs: NASA/GSFC/ASU · Rocks: Diviner, NASA/UCLA · Models: NASA 3D Resources',
+    creditShort: 'Data: NASA LRO (GSFC, ASU, UCLA) · JAXA Kaguya · Models: NASA',
   },
   mars: {
     id: 'mars', name: 'Mars', R: 3389500, G: 3.711, gText: '3.71 m/s² · 0.38 g', dir: 'mars/', exag: 3, root: 1048576, atmo: true,
-    craterScale: 0.22, rockBase: 0.3, sunI: 2.6, albedo: 1.25, sites: MARS_SITES,
+    craterScale: 0.07, rockBase: 0.3, sunI: 2.6, albedo: 1.25, sites: MARS_SITES,
     src: ['MOLA 128 px/° patch (~460 m)', 'MOLA 16 px/° (~3.7 km)', 'MOLA 4 px/° (loading finer…)'], capSrc: 'MOLA polar cap (~640 m)',
     capPatches: [{ id: 'ncap', lat: 90, lon: 0, sp: 640, csp: 1400, colour: true }, { id: 'scap', lat: -90, lon: 0, sp: 640, csp: 1400, colour: true }],
+    // HiRISE stereo DTMs resampled to 2 m (tools/hirise_patches.py), nested inside the MOLA site patches
+    finePatches: [
+      { id: 'jezhr', lat: 18.47648, lon: 77.42540, sp: 2, src: 'HiRISE stereo DTM (2 m)' },
+      { id: 'galehr', lat: -4.63514, lon: 137.40303, sp: 2, src: 'HiRISE stereo DTM (2 m)' },
+    ],
     fillLat: 86.5,   // MOLA has no tracks poleward of ~87°: the source is interpolated there (see tools/polar_caps.py)
     fillSrc: 'MOLA polar gap (interpolated)',
     hd: 'High-detail terrain (~460 m MOLA data)', any: 'Anywhere else (~3.7 km data)',
-    credit: 'Terrain: NASA/GSFC MGS MOLA · Colour: Viking MDIM (USGS) · Models: NASA 3D Resources',
+    credit: 'Terrain: NASA/GSFC MGS MOLA · HiRISE DTMs: NASA/JPL/University of Arizona · Colour: Viking MDIM (USGS) · Models: NASA 3D Resources',
+    creditShort: 'Data: NASA MGS, MRO HiRISE (JPL/UA) · USGS · Models: NASA',
   },
 };
 let PL = PLANETS.moon, SITES = PL.sites;
@@ -276,6 +292,7 @@ const T16 = new Array(8).fill(null);   // 16 px/deg tiles: 4 x 2, each 90°x90°
 const T16loading = new Set();
 const PATCHES = [];       // high-res gnomonic patches around landing sites
 const CPATCHES = [];      // sharper colour patches (from the 8K LROC mosaic)
+const RAMAPS = [];        // Diviner rock abundance around the Moon sites (tools/rock_abundance.py), scales boulder density
 let terrainVersion = 0;
 
 function g4px(ix, iy) {
@@ -374,11 +391,15 @@ function vnoise(x, y, z, s) {
   const y1 = x1 + (x2 - x1) * fy, y2 = x3 + (x4 - x3) * fy;
   return (y1 + (y2 - y1) * fz) * 2 - 1;
 }
+// Four levels, each spanning radii rmax/4..rmax with a cumulative N(>D) ~ D^-2 size distribution inside the level,
+// so together they form one continuous power law, the slope of lunar small-crater equilibrium. Cells are 2 x rmax
+// (the 1.8 r reach must not pass the neighbouring cell). Density is ~60-70% of Trask's mare equilibrium,
+// N(>=D) = 79400 / D^2 per km2 with D in metres; the rest are too degraded to see.
 const CRATER_LEVELS = [
-  { cell: 1100, rmax: 300, prob: 0.55, seed: 11 },
-  { cell: 300, rmax: 85, prob: 0.65, seed: 23 },
-  { cell: 80, rmax: 22, prob: 0.7, seed: 37 },
-  { cell: 22, rmax: 5.5, prob: 0.75, seed: 51 },
+  { cell: 600, rmax: 300, prob: 0.9, seed: 11 },
+  { cell: 170, rmax: 85, prob: 0.9, seed: 23 },
+  { cell: 44, rmax: 22, prob: 0.9, seed: 37 },
+  { cell: 11, rmax: 5.5, prob: 0.9, seed: 51 },
 ];
 let BRIGHT = 0;  // albedo boost from fresh craters, side output
 let CRAT = 0;    // side output: 1 inside a generated crater bowl (for the data overlay)
@@ -402,15 +423,18 @@ function craterField(X, Y, Z, step = 0) {
       const s = R / Math.sqrt(ox * ox + oy * oy + oz * oz); ox *= s; oy *= s; oz *= s;   // centre on the surface
       if (Math.floor(ox / cell) !== ix || Math.floor(oy / cell) !== iy || Math.floor(oz / cell) !== iz) continue;   // must stay in its own cell
       const rr = hash3(ix, iy, iz, seed + 4);
-      const r = rmax * (0.25 + 0.75 * rr * rr);
+      const r = rmax * 0.25 / Math.sqrt(1 - rr * 0.9375);   // truncated power law, rmax/4..rmax
       const keep = unresolved(2 * r);
       if (keep <= 0) continue;
       const ddx = X - ox, ddy = Y - oy, ddz = Z - oz, d2 = ddx * ddx + ddy * ddy + ddz * ddz;
       const lim = 1.8 * r;
       if (d2 > lim * lim) continue;
       const t = Math.sqrt(d2) / r;
-      const age = PL.atmo ? 0.35 + 0.65 * hash3(ix, iy, iz, seed + 5) : hash3(ix, iy, iz, seed + 5);   // 0 fresh ... 1 eroded (Mars: wind and dust soften everything)
-      const depth = r * (0.22 - 0.14 * age), rim = r * (0.05 - 0.035 * age);
+      // 0 fresh ... 1 eroded. At equilibrium most craters are old and shallow; only a few % are fresh (and bright).
+      // Mars: wind and dust soften everything.
+      const ha = hash3(ix, iy, iz, seed + 5), age = PL.atmo ? 0.35 + 0.65 * ha : Math.pow(ha, 0.6);
+      // fresh simple craters: rim-to-floor depth ~0.19 D (depth 0.3 r + rim 0.07 r); degraded ones ~0.05 D
+      const depth = r * (0.3 - 0.24 * age), rim = r * (0.07 - 0.055 * age);
       if (t < 1) { h += keep * (-depth * (1 - t * t) + (rim + depth * 0.0) * t * t * t * t); if (keep > 0.5) CRAT = 1; }
       else { const k = (t - 1) / 0.8; h += keep * rim * (1 - k) * (1 - k); }
       if (age < 0.12) BRIGHT += keep * 0.35 * Math.max(0, 1 - t / 1.8);
@@ -461,7 +485,7 @@ function detailAt(px, py, pz, step = 0) {
 }
 
 let SRC = '';  // side output: which data set dominated
-let SRCI = 0;  // side output, numeric: 1 = fine DTM patch, 0.75 = site/cap patch, 0.5 = 16 px/° tile, 0 = 4 px/° fallback (blended)
+let SRCI = 0;  // side output, numeric: 1 = metre-scale DTM, 0.875 = ~60 m DTM, 0.75 = site/cap patch, 0.5 = 16 px/° tile, 0 = 4 px/° fallback (blended)
 let FINE = 0, FINESP = 0;   // side output: weight of a fine DTM patch here and its post spacing (detailAt drops what it resolves)
 // PATCHES is kept finest first (fine DTMs, then site patches, then polar caps), and composited front to back,
 // so a finer data set always wins where it exists and blends into the coarser one over its outer `blend` px
@@ -483,7 +507,7 @@ function baseAt(px, py, pz) {
     const a = rem * ww;
     if (a <= 0) continue;
     h += a * bicubicArr(p.data, p.n, fx, fy, p.m); rem -= a;
-    if (p.fine) { wf += a; if (a > FINE) { FINE = a; FINESP = p.sp; } } else if (p.cap) wc += a; else ws += a;
+    if (p.fine) { wf += a * (p.sp <= 10 ? 1 : 0.875); if (a > FINE) { FINE = a; FINESP = p.sp; } } else if (p.cap) wc += a; else ws += a;
     if (a > labW) { labW = a; lab = p; }
     if (rem <= 1e-6) { rem = 0; break; }
   }
@@ -1201,13 +1225,33 @@ const rockMeshes = rockGeos.map(g => { const m = new THREE.InstancedMesh(g, rock
 const rockMeshesFar = rockGeosFar.map(g => { const m = new THREE.InstancedMesh(g, rockMat, ROCK_CAP); m.castShadow = false; m.receiveShadow = true; m.count = 0; surfScene.add(m); return m; });
 const rockTiles = new Map();
 let rockKeys = '', rockRadius = 320, rockSeed = 0;
+// Rock abundance (Diviner, fraction of ground covered by >1 m rocks) relative to typical mare (RA_REF), as a
+// multiplier on the generated boulder density; 1 where there is no map (Mars, the poles, away from the sites)
+const RA_REF = 0.0036;
+function rockMul(px, py, pz) {
+  for (const p of RAMAPS) {
+    const d = px * p.F.C[0] + py * p.F.C[1] + pz * p.F.C[2];
+    if (d < p.cosLim) continue;
+    const gx = (px * p.F.E[0] + py * p.F.E[1] + pz * p.F.E[2]) / d * R / p.sp + (p.n - 1) / 2;
+    const gy = -(px * p.F.N[0] + py * p.F.N[1] + pz * p.F.N[2]) / d * R / p.sp + (p.n - 1) / 2;
+    if (gx < 1 || gy < 1 || gx > p.n - 2 || gy > p.n - 2) continue;
+    const v = p.px[(Math.round(gy) * p.n + Math.round(gx)) * 4];
+    if (v === 0) continue;   // no data
+    const m = Math.pow(10, v / 85 - 3) / RA_REF;
+    const e = Math.min(gx, gy, p.n - 1 - gx, p.n - 1 - gy), w = Math.min(1, e / 20);   // fade to 1 at the map edge
+    return Math.min(8, Math.max(0.15, 1 + (m - 1) * w));
+  }
+  return 1;
+}
 function genRockTile(ti, tj) {
   const out = [], x0 = ti * ROCK_TILE, z0 = tj * ROCK_TILE;
-  for (let k = 0; k < 70; k++) {
+  localToUnit(x0 + ROCK_TILE / 2, z0 + ROCK_TILE / 2);
+  const mt = rockMul(UX, UY, UZ), reps = Math.max(1, Math.ceil(PL.rockBase * mt / 0.5));   // more candidates on very rocky ground
+  for (let k = 0; k < 70 * reps; k++) {
     const h1 = hash3(ti, tj, k, 101 + rockSeed), h2 = hash3(ti, tj, k, 202 + rockSeed), h3 = hash3(ti, tj, k, 303 + rockSeed), h4 = hash3(ti, tj, k, 404 + rockSeed);
     const x = x0 + h1 * ROCK_TILE, z = z0 + h2 * ROCK_TILE;
     const y = heightLocal(x, z);
-    const dens = (PL.rockBase + Math.min(1, BRIGHT * 2.2) * 0.6) * (1 - DUNE);
+    const dens = (PL.rockBase * mt + Math.min(1, BRIGHT * 2.2) * 0.6) * (1 - DUNE) / reps;
     if (h3 > dens) continue;
     const r = Math.min(2.6, 0.09 / Math.pow(h4 + 0.012, 0.62));
     if (r < 0.12) continue;
@@ -1412,8 +1456,11 @@ function toggleOverlay(on = !overlay.on) {
 function updateLegend() {
   $('lgPatch').textContent = PL.src[0]; $('lgTile').textContent = PL.src[1]; $('lgLow').textContent = PL.src[2].replace(' (loading finer…)', ' fallback');
   $('lgDune').parentElement.style.display = PL.atmo ? '' : 'none';
-  $('lgFineRow').style.display = PL.finePatches ? '' : 'none';
-  if (PL.finePatches) $('lgFine').textContent = 'LROC NAC stereo DTM (2–5 m)';
+  $('lgRock').textContent = PL.rockMaps ? 'Boulders (generated; density from Diviner rock map near sites)' : 'Boulders (all generated)';
+  // fine-data legend rows, from the planet's finePatches: metre-scale (blue) and ~60 m (teal)
+  const fps = PL.finePatches || [], fine = fps.find(p => p.sp <= 10), mid = fps.find(p => p.sp > 10);
+  $('lgFineRow').style.display = fine ? '' : 'none'; if (fine) $('lgFine').textContent = fine.legend || fine.src;
+  $('lgMidRow').style.display = mid ? '' : 'none'; if (mid) $('lgMid').textContent = mid.legend || mid.src;
 }
 $('bOvl').onclick = () => toggleOverlay();
 $('bLights').onclick = () => setHeadlights(!headlights.on); $('bGfx').onclick = () => setQuality(!Q.high);
@@ -1496,18 +1543,20 @@ async function ensurePatchesNear(lat, lon) {
     // new height data: rebuild chunks (terrainVersion) and drop cached physics heights (PH)
     jobs.push(loadHeight(`${PL.dir}patch_${s.id}.png`).then(h => { if (PL.id !== pid) return; const sp = s.sp || 240; addPatch({ id: s.id, cap, F: sf, n: h.w, m: h.h, sp, data: h.data, cosLim: Math.cos(Math.max(h.w, h.h) * sp * 0.75 / R) }); terrainVersion++; PH.clear(); }).catch(console.error));
     // colour patches blend in list order, so caps go first and site patches paint over them
+    if (PL.rockMaps && !cap && Math.abs(s.lat) < 70) jobs.push(loadBitmap(`${PL.dir}ra_${s.id}.png`).then(b => { if (PL.id !== pid) return; RAMAPS.push({ id: s.id, F: sf, n: b.w, sp: 240, px: b.px, cosLim: Math.cos(b.w * 240 * 0.75 / R) }); clearRocks(); }).catch(console.error));
     if (s.colour) jobs.push(loadBitmap(`${PL.dir}cpatch_${s.id}.jpg`).then(b => { if (PL.id !== pid) return; const sp = s.csp || 480; const cp = { id: s.id, F: sf, n: b.w, sp, px: b.px, cosLim: Math.cos(b.w * sp * 0.75 / R) }; if (cap) CPATCHES.unshift(cp); else CPATCHES.push(cp); terrainVersion++; }).catch(console.error));
   }
   // fine DTM patches (LROC NAC stereo models etc.): own centre, rectangular, loaded within FINE_RANGE
   for (const fp of PL.finePatches || []) {
     if (PATCHES.some(p => p.id === fp.id) || fp.loading) continue;
+    if (fp.site) { const st = SITES.find(x => x.id === fp.site); fp.lat = st.lat; fp.lon = st.lon; }
     const ff = makeFrame(fp.lat, fp.lon);
-    if (f.C[0] * ff.C[0] + f.C[1] * ff.C[1] + f.C[2] * ff.C[2] < Math.cos(FINE_RANGE / R)) continue;
+    if (f.C[0] * ff.C[0] + f.C[1] * ff.C[1] + f.C[2] * ff.C[2] < Math.cos((fp.range || FINE_RANGE) / R)) continue;
     fp.loading = true;
     const pid = PL.id;
     jobs.push(loadHeight(`${PL.dir}patch_${fp.id}.png`).then(h => {
       if (PL.id !== pid) return;
-      addPatch({ id: fp.id, fine: true, src: fp.src, F: ff, n: h.w, m: h.h, sp: fp.sp, blend: Math.round(450 / fp.sp), data: h.data, cosLim: Math.cos(Math.hypot(h.w, h.h) * fp.sp * 0.6 / R) });
+      addPatch({ id: fp.id, fine: true, src: fp.src, F: ff, n: h.w, m: h.h, sp: fp.sp, blend: Math.round((fp.blend || 450) / fp.sp), data: h.data, cosLim: Math.cos(Math.hypot(h.w, h.h) * fp.sp * 0.6 / R) });
       terrainVersion++; PH.clear();
     }).catch(console.error));
   }
@@ -1539,6 +1588,7 @@ async function land(s) {
   camState.smoothYaw = rover.yaw; camState.yawOff = 0; camState.pitch = 0.28; camState.dist = 11; camState.mode = 0;
   $('siteName').textContent = s.name;
   document.querySelectorAll('.poiRow').forEach(el => el.style.display = poi ? '' : 'none');
+  $('hNote').textContent = s.note || ''; document.querySelectorAll('.noteRow').forEach(el => el.style.display = s.note ? '' : 'none');
   updateTerrain(rover.x, rover.z, 0, true);
   mode = 'surface'; showUI('surface'); perfState.t0 = 0;
   await fade(false);
@@ -1790,7 +1840,7 @@ function frame(now) {
 // ---- planets: load a planet's maps, rebuild the globe and the site list
 let planetLoading = false;
 function resetPlanetData() {
-  G4 = null; COL = null; T16.fill(null); T16loading.clear(); PATCHES.length = 0; CPATCHES.length = 0;
+  G4 = null; COL = null; T16.fill(null); T16loading.clear(); PATCHES.length = 0; CPATCHES.length = 0; RAMAPS.length = 0;
   terrainVersion++; clearTerrain(); clearRocks();
 }
 async function loadPlanet(id, first = false) {
@@ -1820,7 +1870,7 @@ async function loadPlanet(id, first = false) {
     applyAtmosphere();
     buildSiteList();
     document.querySelectorAll('#planetTabs button').forEach(b => b.classList.toggle('on', b.dataset.p === id));
-    $('credit').innerHTML = P.credit;
+    $('credit').innerHTML = `<span class="cLong">${P.credit}</span><span class="cShort">${P.creditShort}</span>`;
     $('hGrav').textContent = P.gText;
     lmObj.visible = P.id === 'moon';
     document.title = `${P.name} Drive`;

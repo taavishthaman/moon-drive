@@ -59,8 +59,9 @@ def bilinear_nan(img, fx, fy):
         out = np.full(yy.shape, np.nan, np.float32); out[ok] = img[yy[ok], xx[ok]]; return out
     return (g(y0, x0) * (1 - tx) + g(y0, x0 + 1) * tx) * (1 - ty) + (g(y0 + 1, x0) * (1 - tx) + g(y0 + 1, x0 + 1) * tx) * ty
 
-def valid_box(a, to_pix, lat, lon, sp, size):
+def valid_box(a, to_pix, lat, lon, sp, size, contain=True):
     """Largest box of at most `size` metres, as near (lat, lon) as possible, whose samples are all valid.
+    contain=False also allows boxes that stop short of the site (when it sits right at the edge of the data).
     Works on a coarse 20 m grid in the site's tangent plane, then returns the centre and pixel counts."""
     step = 20.0; half = 40000
     n = int(2 * half / step) + 1
@@ -78,12 +79,15 @@ def valid_box(a, to_pix, lat, lon, sp, size):
         wc = int(size[0] * frac / step); hr = int(size[1] * min(1.0, frac * 1.5) / step)
         wc = min(wc, int(size[0] / step)); hr = min(hr, int(size[1] / step))
         cand = []
-        for dr in range(-hr // 2 - 10, hr // 2 + 11, 5):          # box must still contain the site
-            for dc in range(-wc // 2 - 10, wc // 2 + 11, 5):
+        for dr in range(-hr // 2 - 60, hr // 2 + 61, 5):          # box centre offsets around the site
+            for dc in range(-wc // 2 - 60, wc // 2 + 61, 5):
                 r0 = c + dr - hr // 2; c0 = c + dc - wc // 2
                 if r0 < 0 or c0 < 0 or r0 + hr >= n or c0 + wc >= n: continue
-                if not (r0 + 30 <= c <= r0 + hr - 30 and c0 + 30 <= c <= c0 + wc - 30): continue
-                if full(r0, c0, hr, wc): cand.append((dr * dr + dc * dc, r0, c0))
+                inside = r0 + 30 <= c <= r0 + hr - 30 and c0 + 30 <= c <= c0 + wc - 30
+                if contain and not inside: continue
+                if full(r0, c0, hr, wc):
+                    gap = max(r0 - c, 0, c - (r0 + hr)) ** 2 + max(c0 - c, 0, c - (c0 + wc)) ** 2   # site to box, in cells
+                    cand.append((gap * 1e6 + dr * dr + dc * dc, r0, c0))
         if cand:
             _, r0, c0 = min(cand); best = (r0, c0, hr, wc); break
     assert best, 'no valid box around the site'
