@@ -28,7 +28,7 @@
   #loadText { color: var(--muted); font-size: 12px; margin-top: 10px; min-height: 1em; }
 
   /* globe UI */
-  #globeUI { top: 16px; left: 16px; width: 290px; padding: 16px; }
+  #globeUI { top: 16px; left: 16px; width: 322px; max-width: calc(100vw - 32px); padding: 16px; box-sizing: border-box; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   #globeUI h1 { font-size: 22px; }
   #planetTabs { display: flex; gap: 4px; padding: 3px; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 9px; margin-bottom: 12px; }
   #planetTabs button { flex: 1; border: 0; background: transparent; font-family: "Barlow Condensed", sans-serif; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; padding: 6px; }
