@@ -46,6 +46,7 @@ node tools/test/shot.mjs mars olympus '[[14,0.28],[3000,0.4]]' 5
 
 ## Architecture (index.html, top to bottom)
 
+- **Last position:** `saveLast()` stores the rover's (or astronaut's) spot per planet in `localStorage['moonDrive.lastPosition']` (`{ v: 1, moon: { lat, lon, bearing, site, walking, t }, mars: … }`) every 5 s on the surface, on tab hide/close and on return to orbit. The site list shows "Continue where you left off"; `resumeLast()` lands in the trip's site frame with the spawn moved to the saved spot, so the site's target and notes still apply. No backend: it lives in that browser only.
 - **`PLANETS` / `MOON_SITES` / `MARS_SITES`:** per-planet settings (radius `R`, gravity `G`, data folder, quadtree `root`, `atmo`, crater/rock/albedo factors, HUD labels) and landing sites (`spawn` in local metres, `yaw`, `poi` target, `sp`/`csp`, `colour`, `quiet`). `loadPlanet(id)` swaps everything.
 - **Height function:**
   - `surfaceAt(unit vector, step) = baseAt()` (measured data: patch, else 16 px/° tile, else 4 px/°) `+ detailAt()` (generated).

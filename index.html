@@ -37,6 +37,7 @@
   .sites { display: grid; gap: 6px; }
   .sites button { text-align: left; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .sites button span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .sites button.resume { border-color: rgba(242, 199, 20, .55); }
   .sites .hd { font-size: 10px; color: var(--accent); letter-spacing: .1em; text-transform: uppercase; margin-top: 8px; }
   #hover { position: fixed; pointer-events: none; font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); transform: translate(14px, 14px); white-space: nowrap; }
   #globeHint { bottom: 16px; left: 50%; transform: translateX(-50%); padding: 8px 14px; font-size: 13px; color: var(--muted); }
@@ -1607,6 +1608,7 @@ function placeLM() {
   lmObj.position.set(x, Math.min(hPhys(x - 2.5, z), hPhys(x + 2.5, z), hPhys(x, z - 2.5), hPhys(x, z + 2.5), hPhys(x, z)) - 0.15, z);
 }
 async function toOrbit() {
+  saveLast(); buildSiteList();   // so "Continue where you left off" points at this drive
   mode = 'landing';
   await fade(true, 'Returning to orbit…');
   if (site) {
@@ -1757,10 +1759,46 @@ function updateCamera(dt) {
   sCam.position.copy(camPos); sCam.lookAt(camTarget);
 }
 
+// ============================================================ last position (per planet, this browser only)
+// localStorage 'moonDrive.lastPosition' = { v: 1, moon: { lat, lon, bearing, site, walking, t }, mars: { … } }
+// lat/lon in degrees (6 decimals, ~0.1 m), bearing in degrees clockwise from north, site = id of the site the trip
+// started from (for its name, target and notes; null for free landings), t = ISO time. Saved every few seconds on
+// the surface and when the tab is hidden or closed; offered as "Continue where you left off" in the site list.
+const LAST_KEY = 'moonDrive.lastPosition';
+function readLast() { try { const o = JSON.parse(localStorage.getItem(LAST_KEY)); return o && o.v === 1 ? o : null; } catch { return null; } }
+function saveLast() {
+  if (mode !== 'surface' || !site) return;
+  const f = astro.active ? astro : rover;
+  localToUnit(f.x, f.z); const u = [UX, UY, UZ];
+  const lat = unitLat(u[1]), lon = unitLon(u[0], u[2]);
+  // heading as a compass bearing, measured in a frame centred on the spot itself
+  localToUnit(f.x + Math.sin(f.yaw) * 10, f.z + Math.cos(f.yaw) * 10);
+  const [ex, ez] = unitToLocal(UX, UY, UZ, makeFrame(lat, lon));
+  const bearing = ((Math.atan2(ex, -ez) * R2D) + 360) % 360;
+  const o = readLast() || { v: 1 };
+  o[PL.id] = { lat: +lat.toFixed(6), lon: +lon.toFixed(6), bearing: +bearing.toFixed(1), site: site.id || site.from || null, walking: astro.active, t: new Date().toISOString() };
+  try { localStorage.setItem(LAST_KEY, JSON.stringify(o)); } catch { /* storage blocked: nothing to resume */ }
+}
+function resumeLast() {
+  const L = readLast()?.[PL.id];
+  if (!L) return;
+  const st = SITES.find(x => x.id === L.site);
+  // land in the trip's site frame (so its target, notes and patches apply), with the spawn moved to the saved spot
+  const base = st || { lat: L.lat, lon: L.lon };
+  const sf = makeFrame(base.lat, base.lon);
+  const here = makeFrame(L.lat, L.lon), b = L.bearing * D2R;
+  localToUnit(0, 0, here); const [sx, sz] = unitToLocal(UX, UY, UZ, sf);
+  localToUnit(Math.sin(b) * 10, -Math.cos(b) * 10, here); const [fx, fz] = unitToLocal(UX, UY, UZ, sf);
+  land({ ...(st || {}), id: undefined, from: L.site, name: `Continue · ${st ? st.name.split(' · ')[0] : 'last position'}`, lat: base.lat, lon: base.lon, spawn: [sx, sz], yaw: Math.atan2(fx - sx, fz - sz) });
+}
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveLast(); });
+addEventListener('pagehide', saveLast);
+
 // ============================================================ HUD
-let hudT = 0;
+let hudT = 0, lastSaveT = 0;
 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 function updateHUD() {
+  if (performance.now() - lastSaveT > 5000) { lastSaveT = performance.now(); saveLast(); }
   const f = astro.active ? astro : rover;
   localToUnit(f.x, f.z);
   const lat = unitLat(UY), lon = unitLon(UX, UZ);
@@ -1915,6 +1953,13 @@ function buildSiteList() {
     const b = document.createElement('button');
     b.innerHTML = `${st.name.replace(' · ', '<br><small style="color:var(--muted)">')}</small><span>${fmtLat(st.lat)}<br>${fmtLon(st.lon)}</span>`;
     b.onclick = () => land(st); list.appendChild(b);
+  }
+  const L = readLast()?.[PL.id];
+  if (L) {   // resume the last drive on this planet (saved in this browser)
+    const st = SITES.find(x => x.id === L.site);
+    const cb = document.createElement('button'); cb.className = 'resume';
+    cb.innerHTML = `Continue where you left off<br><small style="color:var(--muted)">${st ? st.name.split(' · ')[0] : 'Free landing'} · ${new Date(L.t).toLocaleDateString()}</small><span>${fmtLat(L.lat)}<br>${fmtLon(L.lon)}</span>`;
+    cb.onclick = resumeLast; list.insertBefore(cb, list.children[1]);
   }
   const hd = document.createElement('div'); hd.className = 'hd'; hd.textContent = PL.any; list.appendChild(hd);
   const rb = document.createElement('button'); rb.innerHTML = 'Random spot<span>surprise me</span>';
